@@ -1,0 +1,16 @@
+{
+  "name": "审稿大师 - 小说作家全端审稿与听稿",
+  "short_name": "审稿大师",
+  "description": "专为小说作家打造的电脑端与手机端全端审稿与伴读听稿平台",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#FAF8F5",
+  "theme_color": "#D97706",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}

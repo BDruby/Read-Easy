@@ -1,0 +1,119 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --foreground-rgb: 30, 30, 32;
+  --background-start-rgb: 250, 248, 245;
+  --background-end-rgb: 245, 240, 232;
+}
+
+@layer base {
+  body {
+    color: rgb(var(--foreground-rgb));
+    background: #FAF8F5;
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Serif SC", sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+/* Custom literary reading themes */
+.theme-parchment {
+  background-color: #F6F1E7;
+  color: #2D241E;
+}
+.theme-parchment-card {
+  background-color: #EFE8DA;
+  border-color: #DFD3BF;
+}
+
+.theme-bamboo {
+  background-color: #EDF3EB;
+  color: #1F301B;
+}
+.theme-bamboo-card {
+  background-color: #E1EBE0;
+  border-color: #C6D7C3;
+}
+
+.theme-night {
+  background-color: #16181D;
+  color: #D1D5DB;
+}
+.theme-night-card {
+  background-color: #1F222A;
+  border-color: #2D323E;
+}
+
+.theme-white {
+  background-color: #FFFFFF;
+  color: #18181B;
+}
+.theme-white-card {
+  background-color: #F8FAFC;
+  border-color: #E2E8F0;
+}
+
+.theme-amber {
+  background-color: #FAF4E8;
+  color: #352615;
+}
+.theme-amber-card {
+  background-color: #F2E7D3;
+  border-color: #E2D1B3;
+}
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(140, 120, 100, 0.25);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(140, 120, 100, 0.45);
+}
+
+/* Reader paragraph selection & highlight */
+::selection {
+  background-color: rgba(217, 119, 6, 0.25);
+  color: inherit;
+}
+
+/* Synchronized speaking glow animation */
+@keyframes speaking-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(217, 119, 6, 0.4);
+    background-color: rgba(217, 119, 6, 0.12);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgba(217, 119, 6, 0.2);
+    background-color: rgba(217, 119, 6, 0.18);
+  }
+}
+
+.speaking-highlight {
+  animation: speaking-pulse 2.4s infinite ease-in-out;
+  border-left: 4px solid #D97706;
+  padding-left: 12px;
+  border-radius: 4px;
+  transition: all 0.3s ease;
+}
+
+/* Glassmorphism utility */
+.glass-panel {
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+.glass-panel-dark {
+  background: rgba(22, 24, 29, 0.88);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}

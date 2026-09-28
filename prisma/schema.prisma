@@ -1,0 +1,72 @@
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Project {
+  id            String      @id @default(cuid())
+  title         String
+  description   String?     @db.Text
+  coverUrl      String?     @db.VarChar(500)
+  author        String?     @default("作家本人")
+  wordCount     Int         @default(0)
+  chapterCount  Int         @default(0)
+  tags          String?     @default("长篇小说")
+  status        String      @default("审稿中") // 审稿中, 已定稿, 连载中, 草稿
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  chapters      Chapter[]
+
+  @@index([createdAt])
+}
+
+model Chapter {
+  id            String        @id @default(cuid())
+  projectId     String
+  orderIndex    Int           @default(0)
+  title         String
+  content       String        @db.LongText
+  wordCount     Int           @default(0)
+  audioUrl      String?       @db.VarChar(500)
+  notesCount    Int           @default(0)
+  status        String        @default("待审") // 待审, 审阅中, 已修订, 已完成
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  project       Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  annotations   Annotation[]
+
+  @@index([projectId, orderIndex])
+}
+
+model Annotation {
+  id            String      @id @default(cuid())
+  chapterId     String
+  paragraphIdx  Int         @default(0)
+  startIndex    Int         @default(0)
+  endIndex      Int         @default(0)
+  selectedText  String      @db.Text
+  noteText      String      @db.Text
+  type          String      @default("typo") // typo(错别字), comment(评语), polish(润色), plot(伏笔/剧情)
+  color         String      @default("amber") // amber, red, green, blue, purple
+  resolved      Boolean     @default(false)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  chapter       Chapter     @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+
+  @@index([chapterId])
+}
+
+model SystemSetting {
+  id            String      @id @default(cuid())
+  key           String      @unique
+  value         String      @db.LongText
+  group         String      @default("general") // tts, storage, general
+  description   String?
+  updatedAt     DateTime    @updatedAt
+
+  @@index([key, group])
+}
