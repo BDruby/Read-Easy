@@ -161,8 +161,13 @@ export function ReaderView({
 
   // Edit / Proofread Mode
   const [isEditMode, setIsEditMode] = useState(false);
+  const [editModeView, setEditModeView] = useState<'segmented' | 'raw'>('segmented');
   const [editedTitle, setEditedTitle] = useState(title);
   const [editedContent, setEditedContent] = useState(content);
+  const [editedParagraphs, setEditedParagraphs] = useState<string[]>([]);
+  const editParagraphRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const editParagraphTextareaRefs = useRef<(HTMLTextAreaElement | null)[]>([]);
+  const [editJumpInput, setEditJumpInput] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
@@ -179,13 +184,24 @@ export function ReaderView({
 
   // Jump to specific paragraph (works in both Reading Mode and Edit Mode)
   const handleJumpToParagraph = (targetIdx: number, andPlay: boolean = false) => {
-    if (targetIdx < 0 || targetIdx >= paragraphs.length) return;
+    const totalCount = isEditMode && editModeView === 'segmented' ? editedParagraphs.length : paragraphs.length;
+    if (targetIdx < 0 || targetIdx >= totalCount) return;
     lastViewedParagraphIdxRef.current = targetIdx;
     setShowJumpModal(false);
 
     if (isEditMode) {
-      // In edit mode: calculate character offset in editedContent, focus and scroll textarea
-      if (textareaRef.current) {
+      if (editModeView === 'segmented') {
+        const cardEl = editParagraphRefs.current[targetIdx];
+        if (cardEl) {
+          cardEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          setHighlightedJumpIdx(targetIdx);
+          setTimeout(() => setHighlightedJumpIdx(null), 2500);
+        }
+        setTimeout(() => {
+          editParagraphTextareaRefs.current[targetIdx]?.focus();
+        }, 150);
+      } else if (textareaRef.current) {
+        // In raw textarea mode: calculate character offset in editedContent, focus and scroll textarea
         const lines = editedContent.split('\n');
         let charOffset = 0;
         let pCount = 0;
@@ -228,34 +244,140 @@ export function ReaderView({
         : lastViewedParagraphIdxRef.current || 0;
 
     lastViewedParagraphIdxRef.current = targetIdx;
+    const currentParas = splitParagraphs(content);
+    setEditedParagraphs(currentParas.length > 0 ? currentParas : ['']);
+    setEditedContent(content);
+    setEditedTitle(title);
     setIsEditMode(true);
+    setHighlightedJumpIdx(targetIdx);
 
     setTimeout(() => {
-      if (!textareaRef.current) return;
-      const lines = editedContent.split('\n');
-      let charOffset = 0;
-      let pCount = 0;
-      for (let i = 0; i < lines.length; i++) {
-        if (lines[i].trim().length > 0) {
-          if (pCount === targetIdx) break;
-          pCount++;
+      if (editModeView === 'segmented') {
+        editParagraphRefs.current[targetIdx]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        editParagraphTextareaRefs.current[targetIdx]?.focus();
+      } else if (textareaRef.current) {
+        const lines = content.split('\n');
+        let charOffset = 0;
+        let pCount = 0;
+        for (let i = 0; i < lines.length; i++) {
+          if (lines[i].trim().length > 0) {
+            if (pCount === targetIdx) break;
+            pCount++;
+          }
+          charOffset += lines[i].length + 1;
         }
-        charOffset += lines[i].length + 1;
+
+        textareaRef.current.focus();
+        textareaRef.current.setSelectionRange(charOffset, charOffset);
+
+        const ratio = targetIdx / Math.max(1, currentParas.length);
+        const targetScroll = ratio * (textareaRef.current.scrollHeight - textareaRef.current.clientHeight);
+        textareaRef.current.scrollTop = targetScroll;
       }
+    }, 100);
+  };
 
-      textareaRef.current.focus();
-      textareaRef.current.setSelectionRange(charOffset, charOffset);
+  // Update a single paragraph in segmented edit mode
+  const handleUpdateParagraph = (idx: number, newText: string) => {
+    if (newText.includes('\n')) {
+      const parts = newText.split(/\n+/).map((p) => p.trim()).filter(Boolean);
+      if (parts.length > 1) {
+        const newParas = [
+          ...editedParagraphs.slice(0, idx),
+          ...parts,
+          ...editedParagraphs.slice(idx + 1),
+        ];
+        setEditedParagraphs(newParas);
+        setEditedContent(newParas.join('\n\n'));
+        return;
+      }
+    }
+    const newParas = [...editedParagraphs];
+    newParas[idx] = newText;
+    setEditedParagraphs(newParas);
+    setEditedContent(newParas.join('\n\n'));
+  };
 
-      const ratio = targetIdx / Math.max(1, paragraphs.length);
-      const targetScroll = ratio * (textareaRef.current.scrollHeight - textareaRef.current.clientHeight);
-      textareaRef.current.scrollTop = targetScroll;
+  // Keyboard shortcut in paragraph textarea: Enter splits into new paragraph
+  const handleParagraphKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>, idx: number) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      const target = e.currentTarget;
+      const cursor = target.selectionStart;
+      const currentText = editedParagraphs[idx] || '';
+      const beforeText = currentText.slice(0, cursor).trim();
+      const afterText = currentText.slice(cursor).trim();
+
+      const newParas = [
+        ...editedParagraphs.slice(0, idx),
+        beforeText,
+        afterText,
+        ...editedParagraphs.slice(idx + 1),
+      ];
+      setEditedParagraphs(newParas);
+      setEditedContent(newParas.join('\n\n'));
+      lastViewedParagraphIdxRef.current = idx + 1;
+      setHighlightedJumpIdx(idx + 1);
+      setTimeout(() => {
+        editParagraphRefs.current[idx + 1]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        const nextTa = editParagraphTextareaRefs.current[idx + 1];
+        if (nextTa) {
+          nextTa.focus();
+          nextTa.setSelectionRange(0, 0);
+        }
+      }, 80);
+    }
+  };
+
+  // Insert a new paragraph before or after
+  const handleInsertParagraph = (idx: number, position: 'before' | 'after') => {
+    const insertIdx = position === 'before' ? idx : idx + 1;
+    const newParas = [
+      ...editedParagraphs.slice(0, insertIdx),
+      '',
+      ...editedParagraphs.slice(insertIdx),
+    ];
+    setEditedParagraphs(newParas);
+    setEditedContent(newParas.join('\n\n'));
+    lastViewedParagraphIdxRef.current = insertIdx;
+    setHighlightedJumpIdx(insertIdx);
+    setTimeout(() => {
+      editParagraphRefs.current[insertIdx]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      editParagraphTextareaRefs.current[insertIdx]?.focus();
     }, 80);
+  };
+
+  // Delete a paragraph
+  const handleDeleteParagraph = (idx: number) => {
+    if (editedParagraphs.length <= 1) {
+      setEditedParagraphs(['']);
+      setEditedContent('');
+      return;
+    }
+    const newParas = editedParagraphs.filter((_, i) => i !== idx);
+    setEditedParagraphs(newParas);
+    setEditedContent(newParas.join('\n\n'));
+    const nextIdx = Math.min(idx, newParas.length - 1);
+    lastViewedParagraphIdxRef.current = nextIdx;
+    setHighlightedJumpIdx(nextIdx);
+  };
+
+  // Switch between Segmented (with #N badges) and Raw Text modes
+  const handleSwitchEditView = (mode: 'segmented' | 'raw') => {
+    if (mode === 'raw') {
+      setEditedContent(editedParagraphs.join('\n\n'));
+    } else {
+      const paras = splitParagraphs(editedContent);
+      setEditedParagraphs(paras.length > 0 ? paras : ['']);
+    }
+    setEditModeView(mode);
   };
 
   // Exit Edit Mode without saving, restoring reader scroll position
   const handleCancelEdit = () => {
     setEditedTitle(title);
     setEditedContent(content);
+    setEditedParagraphs(splitParagraphs(content));
     setIsEditMode(false);
     setTimeout(() => {
       paragraphRefs.current[lastViewedParagraphIdxRef.current]?.scrollIntoView({
@@ -286,6 +408,7 @@ export function ReaderView({
   useEffect(() => {
     setEditedTitle(title);
     setEditedContent(content);
+    setEditedParagraphs(splitParagraphs(content));
   }, [title, content]);
 
   // Auto-scroll to currently spoken paragraph smoothly
@@ -363,7 +486,8 @@ export function ReaderView({
   const handleSave = async () => {
     setIsSaving(true);
     try {
-      await onSaveContent(editedContent, editedTitle);
+      const contentToSave = editModeView === 'segmented' ? editedParagraphs.join('\n\n') : editedContent;
+      await onSaveContent(contentToSave, editedTitle);
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 2000);
       setIsEditMode(false);
@@ -563,7 +687,9 @@ export function ReaderView({
                 <div className="flex items-center justify-between pb-2 border-b border-stone-100 dark:border-stone-800">
                   <div className="flex items-center gap-1.5 text-xs font-bold text-stone-800 dark:text-stone-200">
                     <Hash className="w-4 h-4 text-amber-500" />
-                    <span>快速跳转段落 (本章共 {paragraphs.length} 段)</span>
+                    <span>
+                      快速跳转段落 ({isEditMode ? '编辑中' : '本章'} 共 {isEditMode && editModeView === 'segmented' ? editedParagraphs.length : paragraphs.length} 段)
+                    </span>
                   </div>
                   <button
                     onClick={() => setShowJumpModal(false)}
@@ -578,8 +704,9 @@ export function ReaderView({
                 <form
                   onSubmit={(e) => {
                     e.preventDefault();
+                    const maxCount = isEditMode && editModeView === 'segmented' ? editedParagraphs.length : paragraphs.length;
                     const target = parseInt(jumpTargetInput, 10);
-                    if (!isNaN(target) && target >= 1 && target <= paragraphs.length) {
+                    if (!isNaN(target) && target >= 1 && target <= maxCount) {
                       handleJumpToParagraph(target - 1);
                     }
                   }}
@@ -590,11 +717,11 @@ export function ReaderView({
                     <input
                       type="number"
                       min={1}
-                      max={paragraphs.length}
+                      max={isEditMode && editModeView === 'segmented' ? editedParagraphs.length : paragraphs.length}
                       autoFocus
                       value={jumpTargetInput}
                       onChange={(e) => setJumpTargetInput(e.target.value)}
-                      placeholder={`输入段落编号 1 ~ ${paragraphs.length}`}
+                      placeholder={`输入段落编号 1 ~ ${isEditMode && editModeView === 'segmented' ? editedParagraphs.length : paragraphs.length}`}
                       className="w-full pl-7 pr-3 py-2 text-sm bg-stone-50 dark:bg-stone-800/80 border border-stone-200 dark:border-stone-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500 font-mono"
                     />
                   </div>
@@ -894,38 +1021,257 @@ export function ReaderView({
 
           {/* Chapter Content Body */}
           {isEditMode ? (
-            <div className="space-y-2">
-              <div className="flex items-center justify-between text-xs text-stone-500">
-                <span>章节正文（每段留空行或回车）</span>
-                <span className="text-[11px] text-stone-400">
-                  当前定位：第 {lastViewedParagraphIdxRef.current + 1} 段
-                </span>
+            <div className="space-y-4">
+              {/* Edit Mode Toolbar & Quick Navigation */}
+              <div className="bg-stone-100/90 dark:bg-stone-800/90 border border-stone-200/80 dark:border-stone-700/80 rounded-2xl p-3 sm:p-4 space-y-3 shadow-xs">
+                {/* Top Row: Mode Switcher & Stats & Quick Jump */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    {/* View Mode Tabs */}
+                    <div className="flex bg-stone-200/80 dark:bg-stone-900/80 p-0.5 rounded-xl text-xs">
+                      <button
+                        type="button"
+                        onClick={() => handleSwitchEditView('segmented')}
+                        className={`px-3 py-1.5 rounded-lg font-medium transition ${
+                          editModeView === 'segmented'
+                            ? 'bg-white dark:bg-stone-800 text-amber-700 dark:text-amber-400 shadow-xs'
+                            : 'text-stone-600 dark:text-stone-400 hover:text-stone-900 dark:hover:text-stone-200'
+                        }`}
+                      >
+                        📑 分段修稿 (#标号定位)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleSwitchEditView('raw')}
+                        className={`px-3 py-1.5 rounded-lg font-medium transition ${
+                          editModeView === 'raw'
+                            ? 'bg-white dark:bg-stone-800 text-amber-700 dark:text-amber-400 shadow-xs'
+                            : 'text-stone-600 dark:text-stone-400 hover:text-stone-900 dark:hover:text-stone-200'
+                        }`}
+                      >
+                        📝 全文源码 (单框自由编辑)
+                      </button>
+                    </div>
+
+                    <span className="text-xs text-stone-500 hidden md:inline">
+                      共 <strong className="font-semibold text-stone-800 dark:text-stone-200">{editedParagraphs.length}</strong> 段
+                    </span>
+                  </div>
+
+                  {/* Quick Paragraph Jump Form within Edit Mode */}
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      const target = parseInt(editJumpInput, 10);
+                      if (!isNaN(target) && target >= 1 && target <= editedParagraphs.length) {
+                        handleJumpToParagraph(target - 1);
+                      }
+                    }}
+                    className="flex items-center gap-1.5 self-end sm:self-auto"
+                  >
+                    <span className="text-xs text-stone-500 shrink-0">快跳定位:</span>
+                    <div className="relative">
+                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-stone-400 font-mono text-xs">#</span>
+                      <input
+                        type="number"
+                        min={1}
+                        max={editedParagraphs.length}
+                        value={editJumpInput}
+                        onChange={(e) => setEditJumpInput(e.target.value)}
+                        placeholder="段号"
+                        className="w-16 pl-6 pr-2 py-1 text-xs bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-500 font-mono text-stone-800 dark:text-stone-100"
+                      />
+                    </div>
+                    <button
+                      type="submit"
+                      className="px-2.5 py-1 text-xs bg-amber-500 hover:bg-amber-600 text-white font-medium rounded-lg transition"
+                    >
+                      直达
+                    </button>
+
+                    {/* Quick presets */}
+                    <div className="hidden lg:flex items-center gap-1 ml-1">
+                      <button
+                        type="button"
+                        onClick={() => handleJumpToParagraph(0)}
+                        className="px-1.5 py-0.5 text-[11px] font-mono text-stone-500 hover:bg-stone-200 dark:hover:bg-stone-700 rounded"
+                        title="跳转至第 1 段"
+                      >
+                        #1
+                      </button>
+                      {editedParagraphs.length > 8 && (
+                        <button
+                          type="button"
+                          onClick={() => handleJumpToParagraph(Math.floor(editedParagraphs.length / 2))}
+                          className="px-1.5 py-0.5 text-[11px] font-mono text-stone-500 hover:bg-stone-200 dark:hover:bg-stone-700 rounded"
+                          title="跳转至正中间"
+                        >
+                          1/2
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => handleJumpToParagraph(editedParagraphs.length - 1)}
+                        className="px-1.5 py-0.5 text-[11px] font-mono text-stone-500 hover:bg-stone-200 dark:hover:bg-stone-700 rounded"
+                        title="跳转至最后一段"
+                      >
+                        末段
+                      </button>
+                    </div>
+                  </form>
+                </div>
+
+                <div className="text-[11px] text-stone-400 dark:text-stone-500 flex items-center justify-between">
+                  <span>
+                    💡 提示：分段模式下每段都带有 <strong>#标号</strong>；在输入框内按回车（Enter）可直接拆分新段落；Shift+Enter 为段内换行。
+                  </span>
+                  <span className="shrink-0 font-medium text-amber-600 dark:text-amber-400">
+                    当前定位：第 {lastViewedParagraphIdxRef.current + 1} 段
+                  </span>
+                </div>
               </div>
-              <textarea
-                ref={textareaRef}
-                value={editedContent}
-                onChange={(e) => setEditedContent(e.target.value)}
-                rows={22}
-                className="w-full bg-stone-50/50 dark:bg-stone-900/50 border border-stone-200 dark:border-stone-700 rounded-2xl p-4 focus:outline-none focus:ring-2 focus:ring-amber-500 font-inherit leading-relaxed"
-                style={{ fontSize: `${fontSize}px`, lineHeight: lineHeight }}
-              />
-              <div className="flex justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={handleCancelEdit}
-                  className="px-4 py-2 rounded-xl text-xs bg-stone-200 dark:bg-stone-800 hover:bg-stone-300 dark:hover:bg-stone-700 transition"
-                >
-                  取消
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSave}
-                  disabled={isSaving}
-                  className="px-5 py-2 rounded-xl text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-medium flex items-center gap-1.5 shadow-md transition"
-                >
-                  <Save className="w-4 h-4" />
-                  <span>{isSaving ? '正在保存...' : '保存更改并同步'}</span>
-                </button>
+
+              {/* Edit Canvas: Segmented (#N) or Raw Textarea */}
+              {editModeView === 'segmented' ? (
+                <div className="space-y-4">
+                  {editedParagraphs.map((para, idx) => {
+                    const isHighlighted = highlightedJumpIdx === idx;
+                    const isTargetAnchor = lastViewedParagraphIdxRef.current === idx;
+
+                    return (
+                      <div
+                        key={idx}
+                        ref={(el) => {
+                          editParagraphRefs.current[idx] = el;
+                        }}
+                        className={`rounded-2xl border transition-all duration-300 p-3.5 sm:p-5 ${
+                          isHighlighted
+                            ? 'border-amber-500 bg-amber-500/10 shadow-lg ring-2 ring-amber-500/60 scale-[1.002]'
+                            : isTargetAnchor
+                            ? 'border-amber-400/80 bg-amber-500/5 dark:bg-amber-950/20 shadow-xs'
+                            : 'border-stone-200/80 dark:border-stone-800 bg-stone-50/60 dark:bg-stone-900/60 hover:border-stone-300 dark:hover:border-stone-700'
+                        }`}
+                      >
+                        {/* Paragraph Header Bar with #Number and Quick Actions */}
+                        <div className="flex items-center justify-between pb-2.5 mb-2.5 border-b border-stone-200/50 dark:border-stone-800/80">
+                          <div className="flex items-center gap-2">
+                            <span
+                              className={`font-mono font-bold text-xs px-2.5 py-1 rounded-lg transition-colors ${
+                                isHighlighted || isTargetAnchor
+                                  ? 'bg-amber-500 text-white shadow-xs'
+                                  : 'bg-stone-200/80 dark:bg-stone-800 text-stone-700 dark:text-stone-300'
+                              }`}
+                            >
+                              #{idx + 1}
+                            </span>
+                            <span className="text-[11px] text-stone-400 font-mono">
+                              {countWords(para)} 字
+                            </span>
+                            {isTargetAnchor && (
+                              <span className="text-[10px] text-amber-700 dark:text-amber-300 bg-amber-100 dark:bg-amber-950/80 px-2 py-0.5 rounded-full font-medium">
+                                🎯 阅读定位处
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => handleInsertParagraph(idx, 'before')}
+                              className="px-2 py-1 rounded-lg text-[11px] text-stone-500 hover:text-stone-800 dark:hover:text-stone-200 hover:bg-stone-200/60 dark:hover:bg-stone-800 transition"
+                              title="在此段上方插入新段落"
+                            >
+                              + 上方插段
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleInsertParagraph(idx, 'after')}
+                              className="px-2 py-1 rounded-lg text-[11px] text-stone-500 hover:text-stone-800 dark:hover:text-stone-200 hover:bg-stone-200/60 dark:hover:bg-stone-800 transition"
+                              title="在此段下方插入新段落 (也可在文本末尾按 Enter)"
+                            >
+                              + 下方插段
+                            </button>
+                            {editedParagraphs.length > 1 && (
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteParagraph(idx)}
+                                className="p-1 rounded-lg text-stone-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/50 transition ml-1"
+                                title="删除此段落"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Individual Paragraph Textarea */}
+                        <textarea
+                          ref={(el) => {
+                            editParagraphTextareaRefs.current[idx] = el;
+                          }}
+                          value={para}
+                          onChange={(e) => handleUpdateParagraph(idx, e.target.value)}
+                          onKeyDown={(e) => handleParagraphKeyDown(e, idx)}
+                          rows={Math.max(2, Math.min(12, Math.ceil(para.length / 32)))}
+                          className="w-full bg-transparent border-0 focus:outline-none focus:ring-0 leading-relaxed font-inherit resize-y text-stone-800 dark:text-stone-100 p-0 text-justify"
+                          style={{
+                            fontSize: `${fontSize}px`,
+                            lineHeight: lineHeight,
+                          }}
+                          placeholder="在此输入段落内容（可直接按回车拆分为新段落）..."
+                        />
+                      </div>
+                    );
+                  })}
+
+                  {/* Append button at bottom of segmented list */}
+                  <div className="pt-2 text-center">
+                    <button
+                      type="button"
+                      onClick={() => handleInsertParagraph(editedParagraphs.length - 1, 'after')}
+                      className="w-full py-3 rounded-2xl border-2 border-dashed border-stone-300 dark:border-stone-700 hover:border-amber-500 text-stone-500 hover:text-amber-600 dark:hover:text-amber-400 text-xs font-medium transition flex items-center justify-center gap-1.5"
+                    >
+                      <span>+ 在章末添加新段落 (#{editedParagraphs.length + 1})</span>
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                /* Raw Textarea Mode */
+                <div className="space-y-2">
+                  <textarea
+                    ref={textareaRef}
+                    value={editedContent}
+                    onChange={(e) => setEditedContent(e.target.value)}
+                    rows={24}
+                    className="w-full bg-stone-50/50 dark:bg-stone-900/50 border border-stone-200 dark:border-stone-700 rounded-2xl p-4 focus:outline-none focus:ring-2 focus:ring-amber-500 font-inherit leading-relaxed"
+                    style={{ fontSize: `${fontSize}px`, lineHeight: lineHeight }}
+                  />
+                </div>
+              )}
+
+              {/* Save & Cancel Action Buttons */}
+              <div className="flex items-center justify-between pt-3 border-t border-stone-200/60 dark:border-stone-800/60">
+                <span className="text-xs text-stone-500">
+                  共 {editedParagraphs.length} 段 · 随时点击保存同步
+                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleCancelEdit}
+                    className="px-4 py-2 rounded-xl text-xs bg-stone-200 dark:bg-stone-800 hover:bg-stone-300 dark:hover:bg-stone-700 text-stone-700 dark:text-stone-300 font-medium transition"
+                  >
+                    取消并还原
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSave}
+                    disabled={isSaving}
+                    className="px-5 py-2 rounded-xl text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-medium flex items-center gap-1.5 shadow-md transition"
+                  >
+                    <Save className="w-4 h-4" />
+                    <span>{isSaving ? '正在保存...' : '保存更改并同步'}</span>
+                  </button>
+                </div>
               </div>
             </div>
           ) : (
