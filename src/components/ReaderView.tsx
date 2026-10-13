@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Type,
   Maximize2,
@@ -23,10 +23,21 @@ import {
   X,
   Hash,
   CornerDownRight,
-  Navigation
+  Navigation,
+  Lightbulb,
+  Mic,
+  Volume2,
+  Download,
+  Loader2,
 } from 'lucide-react';
 import { splitParagraphs, estimateReadingMinutes, countWords } from '@/lib/parser';
 import { copyToClipboard } from '@/lib/clipboard';
+import { useAuth } from '@/lib/AuthContext';
+import { DeleteParagraphModal } from './DeleteParagraphModal';
+import { ParagraphSuggestionModal } from './ParagraphSuggestionModal';
+import { ChapterComments, CommentItem } from './ChapterComments';
+import { VoiceStudioBar } from './VoiceStudioBar';
+import { DEFAULT_VOICE_CAST, EMOTION_PRESETS, VoiceRole, ParagraphVoiceSetting } from '@/lib/voice-cast';
 
 export type ReaderTheme = 'parchment' | 'bamboo' | 'night' | 'white' | 'amber';
 export type FontFamily = 'serif' | 'kaiti' | 'sans';
@@ -70,6 +81,12 @@ export interface ReaderViewProps {
   hasNext?: boolean;
   hasResumedProgress?: boolean;
   onResetToBeginning?: () => void;
+  // Voice Studio Props
+  projectType?: string | null;
+  voiceCast?: VoiceRole[];
+  voiceConfig?: Record<number, ParagraphVoiceSetting>;
+  onUpdateCast?: (cast: VoiceRole[]) => void;
+  onUpdateVoiceConfig?: (config: Record<number, ParagraphVoiceSetting>) => void;
 }
 
 export function ReaderView({
@@ -89,7 +106,26 @@ export function ReaderView({
   hasNext = false,
   hasResumedProgress = false,
   onResetToBeginning,
+  projectType,
+  voiceCast,
+  voiceConfig,
+  onUpdateCast,
+  onUpdateVoiceConfig,
 }: ReaderViewProps) {
+  // Voice Studio Mode State
+  const [isVoiceStudioActive, setIsVoiceStudioActive] = useState<boolean>(projectType === 'audiobook');
+  const [downloadingParaIdx, setDownloadingParaIdx] = useState<number | null>(null);
+  const [previewingParaIdx, setPreviewingParaIdx] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (projectType === 'audiobook') {
+      setIsVoiceStudioActive(true);
+    }
+  }, [projectType]);
+
+  const activeCast = voiceCast && voiceCast.length > 0 ? voiceCast : DEFAULT_VOICE_CAST;
+  const activeVoiceConfig = voiceConfig || {};
+
   // Reader settings state with localStorage persistence
   const [theme, setTheme] = useState<ReaderTheme>('parchment');
   const [fontSize, setFontSize] = useState<number>(19); // 15 - 28 px
@@ -150,6 +186,134 @@ export function ReaderView({
     try { localStorage.setItem('review_reader_max_width', w); } catch {}
   };
 
+  // Voice Studio Paragraph Handlers
+  const handleUpdateParaRole = (idx: number, roleId: string) => {
+    if (onUpdateVoiceConfig) {
+      const existing = activeVoiceConfig[idx] || {};
+      onUpdateVoiceConfig({
+        ...activeVoiceConfig,
+        [idx]: { ...existing, roleId },
+      });
+    }
+  };
+
+  const handleUpdateParaEmotion = (idx: number, emotion: any) => {
+    if (onUpdateVoiceConfig) {
+      const existing = activeVoiceConfig[idx] || {};
+      onUpdateVoiceConfig({
+        ...activeVoiceConfig,
+        [idx]: { ...existing, emotion },
+      });
+    }
+  };
+
+  const handlePreviewSingleParagraph = async (idx: number, text: string) => {
+    if (previewingParaIdx !== null) return;
+    setPreviewingParaIdx(idx);
+    try {
+      const pSetting = activeVoiceConfig[idx] || {};
+      const roleId = pSetting.roleId || 'narrator';
+      const role = activeCast.find((r) => r.id === roleId) || activeCast[0];
+      const emotionId = pSetting.emotion || 'normal';
+      const emotion = EMOTION_PRESETS.find((e) => e.id === emotionId) || EMOTION_PRESETS[0];
+      const speed = pSetting.speed || emotion.speed || 1.0;
+
+      const res = await fetch('/api/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text,
+          voice: role.voice,
+          speed: speed,
+        }),
+      });
+
+      if (res.ok) {
+        const blob = await res.blob();
+        const audio = new Audio(URL.createObjectURL(blob));
+        audio.onended = () => setPreviewingParaIdx(null);
+        audio.onerror = () => setPreviewingParaIdx(null);
+        await audio.play();
+      } else {
+        setPreviewingParaIdx(null);
+      }
+    } catch {
+      setPreviewingParaIdx(null);
+    }
+  };
+
+  const handleDownloadSingleParagraph = async (idx: number, text: string) => {
+    if (downloadingParaIdx !== null) return;
+    setDownloadingParaIdx(idx);
+    try {
+      const pSetting = activeVoiceConfig[idx] || {};
+      const roleId = pSetting.roleId || 'narrator';
+      const role = activeCast.find((r) => r.id === roleId) || activeCast[0];
+      const emotionId = pSetting.emotion || 'normal';
+      const emotion = EMOTION_PRESETS.find((e) => e.id === emotionId) || EMOTION_PRESETS[0];
+      const speed = pSetting.speed || emotion.speed || 1.0;
+
+      const res = await fetch('/api/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text,
+          voice: role.voice,
+          speed: speed,
+        }),
+      });
+
+      if (!res.ok) {
+        throw new Error('合成段落音频失败');
+      }
+
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${title || '有声章节'}_第${idx + 1}段_${role.name}.mp3`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      console.error(err);
+      alert('下载单段音频失败，请稍后重试');
+    } finally {
+      setDownloadingParaIdx(null);
+    }
+  };
+
+  const getRoleBorderColor = (roleId?: string) => {
+    switch (roleId) {
+      case 'male_lead':
+        return 'border-l-4 border-blue-400 dark:border-blue-500 pl-3.5';
+      case 'female_lead':
+        return 'border-l-4 border-rose-400 dark:border-rose-500 pl-3.5';
+      case 'storyteller':
+        return 'border-l-4 border-indigo-400 dark:border-indigo-500 pl-3.5';
+      case 'mature_male':
+        return 'border-l-4 border-purple-400 dark:border-purple-500 pl-3.5';
+      case 'narrator':
+      default:
+        return 'border-l-4 border-amber-400/80 dark:border-amber-500/80 pl-3.5';
+    }
+  };
+
+  const getRoleSelectClasses = (roleId?: string) => {
+    switch (roleId) {
+      case 'male_lead':
+        return 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border-blue-300 dark:border-blue-800';
+      case 'female_lead':
+        return 'bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border-rose-300 dark:border-rose-800';
+      case 'storyteller':
+        return 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border-indigo-300 dark:border-indigo-800';
+      case 'mature_male':
+        return 'bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border-purple-300 dark:border-purple-800';
+      case 'narrator':
+      default:
+        return 'bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border-amber-300 dark:border-amber-800';
+    }
+  };
+
   // Quick Jump Modal state
   const [showJumpModal, setShowJumpModal] = useState(false);
   const [jumpTargetInput, setJumpTargetInput] = useState('');
@@ -171,6 +335,49 @@ export function ReaderView({
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
+
+  // Auth & Permissions
+  const { isLoggedIn, openLoginModal } = useAuth();
+
+  // Comments & Suggestions state
+  const [comments, setComments] = useState<CommentItem[]>([]);
+  const [deletingParaIdx, setDeletingParaIdx] = useState<number | null>(null);
+  const [suggestionParaIdx, setSuggestionParaIdx] = useState<number | null>(null);
+
+  // Fetch comments for current chapter
+  const loadComments = useCallback(async () => {
+    if (!chapterId) return;
+    try {
+      const res = await fetch(`/api/chapters/${chapterId}/comments`);
+      const data = await res.json();
+      if (data.success && Array.isArray(data.data)) {
+        setComments(data.data);
+      }
+    } catch (e) {
+      console.error('Failed to load comments:', e);
+    }
+  }, [chapterId]);
+
+  useEffect(() => {
+    loadComments();
+  }, [loadComments]);
+
+  const handleDeleteComment = async (commentId: string) => {
+    if (!confirm('确定要删除此条留言/建议吗？')) return;
+    try {
+      const res = await fetch(`/api/chapters/${chapterId}/comments?commentId=${commentId}`, {
+        method: 'DELETE',
+      });
+      const data = await res.json();
+      if (data.success) {
+        loadComments();
+      } else {
+        alert(data.message || '删除失败');
+      }
+    } catch (e: any) {
+      alert(e.message || '删除请求失败');
+    }
+  };
 
   // Copy current chapter text
   const handleCopyChapter = async () => {
@@ -236,6 +443,12 @@ export function ReaderView({
 
   // Enter Edit Mode while preserving exact paragraph location
   const handleEnterEditMode = (specificParaIdx?: number) => {
+    if (!isLoggedIn) {
+      openLoginModal(() => {
+        handleEnterEditMode(specificParaIdx);
+      });
+      return;
+    }
     const targetIdx =
       typeof specificParaIdx === 'number'
         ? specificParaIdx
@@ -347,8 +560,18 @@ export function ReaderView({
     }, 80);
   };
 
-  // Delete a paragraph
+  // Delete a paragraph (with confirmation modal for non-empty content)
   const handleDeleteParagraph = (idx: number) => {
+    const text = editedParagraphs[idx] || '';
+    if (!text.trim()) {
+      // If the paragraph is empty, delete directly without modal
+      performDeleteParagraph(idx);
+      return;
+    }
+    setDeletingParaIdx(idx);
+  };
+
+  const performDeleteParagraph = (idx: number) => {
     if (editedParagraphs.length <= 1) {
       setEditedParagraphs(['']);
       setEditedContent('');
@@ -484,6 +707,12 @@ export function ReaderView({
 
   // Save modified content and restore reader scroll position
   const handleSave = async () => {
+    if (!isLoggedIn) {
+      openLoginModal(() => {
+        handleSave();
+      });
+      return;
+    }
     setIsSaving(true);
     try {
       const contentToSave = editModeView === 'segmented' ? editedParagraphs.join('\n\n') : editedContent;
@@ -650,6 +879,21 @@ export function ReaderView({
                 <span className="text-[11px] font-mono text-amber-600 dark:text-amber-400 font-semibold sm:hidden">
                   #{currentSpeakingIdx + 1}
                 </span>
+              </button>
+
+              {/* Voice Studio Toggle */}
+              <button
+                type="button"
+                onClick={() => setIsVoiceStudioActive(!isVoiceStudioActive)}
+                className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition ${
+                  isVoiceStudioActive
+                    ? 'bg-purple-600 hover:bg-purple-700 text-white shadow-xs'
+                    : 'bg-purple-50 dark:bg-purple-950/60 hover:bg-purple-100 dark:hover:bg-purple-900/60 text-purple-700 dark:text-purple-300 border border-purple-200/50 dark:border-purple-800/50'
+                }`}
+                title="切换 AI 有声工坊模式 (声优分配、单段MP3与全篇导出)"
+              >
+                <Mic className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">有声工坊</span>
               </button>
 
               {/* Typography / Theme Setting Button (Sticky at top) */}
@@ -942,6 +1186,20 @@ export function ReaderView({
 
       {/* Main Reader Content Canvas */}
       <main className={`mx-auto px-4 sm:px-6 pt-8 ${maxWidthClass}`}>
+        {/* Voice Studio Top Bar */}
+        {isVoiceStudioActive && (
+          <VoiceStudioBar
+            chapterId={chapterId}
+            chapterTitle={title}
+            paragraphs={paragraphs}
+            cast={activeCast}
+            voiceConfig={activeVoiceConfig}
+            onUpdateCast={(newCast) => onUpdateCast && onUpdateCast(newCast)}
+            onUpdateVoiceConfig={(newConf) => onUpdateVoiceConfig && onUpdateVoiceConfig(newConf)}
+            isLoggedIn={isLoggedIn}
+          />
+        )}
+
         {/* Paper Container */}
         <div
           className={`rounded-3xl border p-6 sm:p-12 shadow-reader transition-all ${themePaperClass[theme]}`}
@@ -1302,7 +1560,7 @@ export function ReaderView({
                         : isJumpHighlighted
                         ? 'ring-2 ring-amber-500 bg-amber-500/15 shadow-md scale-[1.002]'
                         : 'hover:bg-black/[0.02] dark:hover:bg-white/[0.02]'
-                    }`}
+                    } ${isVoiceStudioActive ? getRoleBorderColor(activeVoiceConfig[idx]?.roleId) : ''}`}
                     title="双击本段开始听读"
                   >
                     {/* Paragraph Quick Speak Button on Hover (Desktop) */}
@@ -1331,22 +1589,112 @@ export function ReaderView({
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
+                          setSuggestionParaIdx(idx);
+                        }}
+                        className="opacity-0 group-hover/badge:opacity-100 hover:text-amber-600 dark:hover:text-amber-400 transition-opacity ml-1 inline-block text-[10px]"
+                        title="针对此段提建议 / 留建议"
+                      >
+                        💡建议
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
                           handleEnterEditMode(idx);
                         }}
                         className="opacity-0 group-hover/badge:opacity-100 hover:text-emerald-600 dark:hover:text-emerald-400 transition-opacity ml-0.5 hidden sm:inline-block text-[10px]"
-                        title="修此段（直接进入编辑模式并定位光标）"
+                        title="修此段（需要作者登录）"
                       >
                         ✏️
                       </button>
                     </span>
+
+                    {/* Voice Studio Per-Paragraph Toolbar */}
+                    {isVoiceStudioActive && (
+                      <div className="mb-2 flex flex-wrap items-center justify-between gap-1.5 px-3 py-1.5 rounded-xl bg-purple-50/70 dark:bg-purple-950/40 border border-purple-200/60 dark:border-purple-800/60 text-xs shadow-xs">
+                        {/* Role & Emotion Selectors */}
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {/* Role Dropdown */}
+                          <select
+                            value={activeVoiceConfig[idx]?.roleId || 'narrator'}
+                            onChange={(e) => handleUpdateParaRole(idx, e.target.value)}
+                            onClick={(e) => e.stopPropagation()}
+                            className={`text-xs font-semibold px-2 py-0.5 rounded-lg border focus:outline-none transition ${getRoleSelectClasses(
+                              activeVoiceConfig[idx]?.roleId
+                            )}`}
+                          >
+                            {activeCast.map((r) => (
+                              <option key={r.id} value={r.id}>
+                                🎙️ {r.name}
+                              </option>
+                            ))}
+                          </select>
+
+                          {/* Emotion / Tone Dropdown */}
+                          <select
+                            value={activeVoiceConfig[idx]?.emotion || 'normal'}
+                            onChange={(e) => handleUpdateParaEmotion(idx, e.target.value)}
+                            onClick={(e) => e.stopPropagation()}
+                            className="text-xs bg-white dark:bg-stone-900 text-stone-700 dark:text-stone-300 px-2 py-0.5 rounded-lg border border-stone-200 dark:border-stone-700 focus:outline-none"
+                          >
+                            {EMOTION_PRESETS.map((em) => (
+                              <option key={em.id} value={em.id}>
+                                {em.icon} {em.name} ({em.speed}x)
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {/* Preview & Download Buttons */}
+                        <div className="flex items-center gap-1">
+                          {/* Single Sentence Preview */}
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handlePreviewSingleParagraph(idx, para);
+                            }}
+                            disabled={previewingParaIdx === idx}
+                            className="p-1 px-2 rounded-lg bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 hover:border-purple-400 text-stone-600 dark:text-stone-300 hover:text-purple-600 dark:hover:text-purple-400 transition text-[11px] flex items-center gap-1"
+                            title="试听本句由该声优配音的效果"
+                          >
+                            {previewingParaIdx === idx ? (
+                              <Loader2 className="w-3 h-3 animate-spin text-purple-500" />
+                            ) : (
+                              <Volume2 className="w-3 h-3 text-purple-500" />
+                            )}
+                            <span>试听</span>
+                          </button>
+
+                          {/* Single Sentence MP3 Download */}
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDownloadSingleParagraph(idx, para);
+                            }}
+                            disabled={downloadingParaIdx === idx}
+                            className="p-1 px-2 rounded-lg bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 hover:border-purple-400 text-stone-600 dark:text-stone-300 hover:text-purple-600 dark:hover:text-purple-400 transition text-[11px] flex items-center gap-1"
+                            title="下载本句单独的 MP3 音频文件（可直接导入剪映）"
+                          >
+                            {downloadingParaIdx === idx ? (
+                              <Loader2 className="w-3 h-3 animate-spin text-purple-500" />
+                            ) : (
+                              <Download className="w-3 h-3 text-stone-400" />
+                            )}
+                            <span>单段MP3</span>
+                          </button>
+                        </div>
+                      </div>
+                    )}
 
                     {/* Paragraph Text Content */}
                     <p className="indent-8 leading-relaxed">
                       {para}
                     </p>
 
-                    {/* Inline Annotations Badges for this paragraph */}
-                    {paraAnnotations.length > 0 && (
+                    {/* Inline Annotations & Paragraph Suggestions */}
+                    {(paraAnnotations.length > 0 || comments.filter((c) => c.paragraphIdx === idx).length > 0) && (
                       <div className="mt-2 flex flex-wrap gap-1.5 pl-8">
                         {paraAnnotations.map((ann) => (
                           <span
@@ -1362,20 +1710,80 @@ export function ReaderView({
                             <AlertTriangle className="w-3 h-3" />
                             <span className="font-medium">「{ann.selectedText.slice(0, 10)}」</span>
                             <span>{ann.noteText}</span>
-                            <button
-                              onClick={() => onDeleteAnnotation(ann.id)}
-                              className="ml-1 hover:text-stone-900 dark:hover:text-white"
-                              title="删除此批注"
-                            >
-                              ×
-                            </button>
+                            {isLoggedIn && (
+                              <button
+                                onClick={() => onDeleteAnnotation(ann.id)}
+                                className="ml-1 hover:text-stone-900 dark:hover:text-white"
+                                title="删除此批注"
+                              >
+                                ×
+                              </button>
+                            )}
                           </span>
                         ))}
+
+                        {/* Paragraph Reader Suggestions */}
+                        {comments
+                          .filter((c) => c.paragraphIdx === idx)
+                          .map((comm) => (
+                            <span
+                              key={comm.id}
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs border bg-amber-50/80 border-amber-200 text-amber-800 dark:bg-amber-950/60 dark:text-amber-200"
+                            >
+                              <Lightbulb className="w-3 h-3 text-amber-600" />
+                              <span className="font-semibold">[{comm.nickname}]</span>
+                              <span>{comm.content}</span>
+                              {isLoggedIn && (
+                                <button
+                                  onClick={() => handleDeleteComment(comm.id)}
+                                  className="ml-1 hover:text-stone-900 dark:hover:text-white"
+                                  title="删除此建议 (作者权限)"
+                                >
+                                  ×
+                                </button>
+                              )}
+                            </span>
+                          ))}
                       </div>
                     )}
                   </div>
                 );
               })}
+
+              {/* Bottom Chapter Navigation */}
+              <div className="mt-12 pt-6 border-t border-stone-200/60 dark:border-stone-700/60 flex items-center justify-between text-xs">
+                <button
+                  type="button"
+                  onClick={onPrevChapter}
+                  disabled={!hasPrev}
+                  className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-stone-100 dark:bg-stone-800 hover:bg-stone-200 dark:hover:bg-stone-700 disabled:opacity-30 disabled:cursor-not-allowed transition font-medium text-stone-700 dark:text-stone-300"
+                  title="上一章"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                  <span>上一章</span>
+                </button>
+                <span className="text-stone-400 font-mono text-[11px]">
+                  本章完 · 共 {wordCount.toLocaleString()} 字
+                </span>
+                <button
+                  type="button"
+                  onClick={onNextChapter}
+                  disabled={!hasNext}
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 disabled:opacity-30 disabled:cursor-not-allowed text-white transition font-medium shadow-xs"
+                  title="下一章"
+                >
+                  <span>下一章</span>
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Chapter Bottom Comments Board */}
+              <ChapterComments
+                chapterId={chapterId}
+                chapterTitle={title}
+                comments={comments}
+                onRefreshComments={loadComments}
+              />
             </div>
           )}
         </div>
@@ -1451,6 +1859,30 @@ export function ReaderView({
           </div>
         </div>
       )}
+
+      {/* Delete Paragraph Warning Confirmation Modal */}
+      <DeleteParagraphModal
+        isOpen={deletingParaIdx !== null}
+        paragraphIndex={deletingParaIdx}
+        paragraphText={deletingParaIdx !== null ? editedParagraphs[deletingParaIdx] || '' : ''}
+        onClose={() => setDeletingParaIdx(null)}
+        onConfirm={() => {
+          if (deletingParaIdx !== null) {
+            performDeleteParagraph(deletingParaIdx);
+            setDeletingParaIdx(null);
+          }
+        }}
+      />
+
+      {/* Paragraph Suggestion Modal */}
+      <ParagraphSuggestionModal
+        isOpen={suggestionParaIdx !== null}
+        chapterId={chapterId}
+        paragraphIndex={suggestionParaIdx}
+        paragraphText={suggestionParaIdx !== null ? paragraphs[suggestionParaIdx] || '' : ''}
+        onClose={() => setSuggestionParaIdx(null)}
+        onSuccess={() => loadComments()}
+      />
     </div>
   );
 }

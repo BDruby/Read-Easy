@@ -19,8 +19,35 @@ import {
   CheckCircle2,
   Check
 } from 'lucide-react';
+import { DOUBAO_VOICES } from '@/lib/tts/doubao-tts';
 import { CHINESE_VOICES } from '@/lib/tts/edge-tts';
 import { preprocessTTSText } from '@/lib/parser';
+import { VoiceRole, ParagraphVoiceSetting, EMOTION_PRESETS } from '@/lib/voice-cast';
+
+export interface AIVoiceItem {
+  id: string;
+  name: string;
+  gender: 'Male' | 'Female';
+  provider: '豆包大模型' | '经典神经语音';
+  description: string;
+}
+
+export const ALL_AI_VOICES: AIVoiceItem[] = [
+  ...DOUBAO_VOICES.map((v) => ({
+    id: v.id,
+    name: v.name,
+    gender: v.gender as 'Male' | 'Female',
+    provider: '豆包大模型' as const,
+    description: v.description,
+  })),
+  ...CHINESE_VOICES.map((v) => ({
+    id: v.id,
+    name: v.name,
+    gender: v.gender as 'Male' | 'Female',
+    provider: '经典神经语音' as const,
+    description: v.description,
+  })),
+];
 
 export interface AudioPlayerProps {
   paragraphs: string[];
@@ -33,6 +60,8 @@ export interface AudioPlayerProps {
   hasPrevChapter?: boolean;
   hasNextChapter?: boolean;
   playTrigger?: number;
+  voiceCast?: VoiceRole[];
+  voiceConfig?: Record<number, ParagraphVoiceSetting>;
 }
 
 export function AudioPlayer({
@@ -46,11 +75,14 @@ export function AudioPlayer({
   hasPrevChapter = false,
   hasNextChapter = false,
   playTrigger,
+  voiceCast,
+  voiceConfig,
 }: AudioPlayerProps) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [playbackSpeed, setPlaybackSpeed] = useState<number>(1.0);
-  const [selectedVoice, setSelectedVoice] = useState<string>('zh-CN-YunjianNeural');
+  const [selectedVoice, setSelectedVoice] = useState<string>('zh_female_vv_uranus_bigtts');
+  const [voiceCategory, setVoiceCategory] = useState<'all' | 'doubao' | 'edge'>('all');
   const [sleepTimerMinutes, setSleepTimerMinutes] = useState<number | null>(null);
   const [timerRemainingSecs, setTimerRemainingSecs] = useState<number | null>(null);
   const [showVoiceMenu, setShowVoiceMenu] = useState(false);
@@ -116,6 +148,17 @@ export function AudioPlayer({
     activeIdxRef.current = currentParagraphIdx;
   }, [currentParagraphIdx]);
 
+  const voiceCastRef = useRef<VoiceRole[] | undefined>(voiceCast);
+  const voiceConfigRef = useRef<Record<number, ParagraphVoiceSetting> | undefined>(voiceConfig);
+
+  useEffect(() => {
+    voiceCastRef.current = voiceCast;
+  }, [voiceCast]);
+
+  useEffect(() => {
+    voiceConfigRef.current = voiceConfig;
+  }, [voiceConfig]);
+
   // Clean teardown on unmount
   useEffect(() => {
     return () => {
@@ -124,13 +167,10 @@ export function AudioPlayer({
         audioRef.current.src = '';
         audioRef.current = null;
       }
-      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-        window.speechSynthesis.cancel();
-      }
     };
   }, []);
 
-  // 1. Restore Persisted Voice & Speed Preferences from LocalStorage on Mount
+  // Restore Persisted Voice & Speed Preferences from LocalStorage on Mount
   useEffect(() => {
     try {
       // Restore Speed
@@ -145,7 +185,7 @@ export function AudioPlayer({
 
       // Restore Voice
       const savedVoice = localStorage.getItem('review_tts_voice');
-      if (savedVoice && CHINESE_VOICES.some((v) => v.id === savedVoice)) {
+      if (savedVoice && ALL_AI_VOICES.some((v) => v.id === savedVoice)) {
         setSelectedVoice(savedVoice);
         selectedVoiceRef.current = savedVoice;
       } else {
@@ -153,11 +193,13 @@ export function AudioPlayer({
         fetch('/api/settings')
           .then((res) => res.json())
           .then((data) => {
-            if (data.success && data.data?.edge_voice) {
-              const v = data.data.edge_voice;
-              setSelectedVoice(v);
-              selectedVoiceRef.current = v;
-              localStorage.setItem('review_tts_voice', v);
+            if (data.success) {
+              const v = data.data?.volcano_voice_type || data.data?.edge_voice;
+              if (v && ALL_AI_VOICES.some((item) => item.id === v)) {
+                setSelectedVoice(v);
+                selectedVoiceRef.current = v;
+                localStorage.setItem('review_tts_voice', v);
+              }
             }
           })
           .catch(() => {});
@@ -333,7 +375,20 @@ export function AudioPlayer({
       const raw = list[idxToFetch]?.trim();
       const { cleanText } = preprocessTTSText(raw);
       if (cleanText) {
-        fetchAudioWithRetry(cleanText, voice, speed).catch(() => {});
+        let fetchVoice = voice;
+        let fetchSpeed = speed;
+        const currentConfig = voiceConfigRef.current;
+        const currentCast = voiceCastRef.current;
+        if (currentConfig && currentConfig[idxToFetch]?.roleId && currentCast) {
+          const matched = currentCast.find((r) => r.id === currentConfig[idxToFetch].roleId);
+          if (matched) fetchVoice = matched.voice;
+          const emId = currentConfig[idxToFetch]?.emotion;
+          if (emId) {
+            const em = EMOTION_PRESETS.find((e) => e.id === emId);
+            if (em) fetchSpeed = em.speed;
+          }
+        }
+        fetchAudioWithRetry(cleanText, fetchVoice, fetchSpeed).catch(() => {});
       }
     });
   }, [fetchAudioWithRetry]);
@@ -370,19 +425,55 @@ export function AudioPlayer({
 
     // Generate unique session token for this playback request
     const sessionId = ++playbackSessionIdRef.current;
-    const voiceToUse = overrideVoice || selectedVoiceRef.current;
+    
+    // Resolve dynamic character voice & emotion if assigned in voiceConfig
+    let voiceToUse = overrideVoice || selectedVoiceRef.current;
+    let speedToUse = speedRef.current;
+
+    const currentConfig = voiceConfigRef.current;
+    const currentCast = voiceCastRef.current;
+    if (currentConfig && currentConfig[idx]?.roleId && currentCast) {
+      const matchedRole = currentCast.find((r) => r.id === currentConfig[idx].roleId);
+      if (matchedRole) {
+        voiceToUse = matchedRole.voice;
+      }
+      const emId = currentConfig[idx]?.emotion;
+      if (emId) {
+        const matchedEm = EMOTION_PRESETS.find((e) => e.id === emId);
+        if (matchedEm) {
+          speedToUse = matchedEm.speed;
+        }
+      }
+    }
 
     isManualStopRef.current = false;
     isPlayingRef.current = true;
     activeIdxRef.current = idx;
     setIsPlaying(true);
 
-    // Cancel any browser speechSynthesis to prevent robotic voice interference
-    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
-    }
+    let hasEndedTriggered = false;
+    const triggerNext = () => {
+      if (hasEndedTriggered) return;
+      hasEndedTriggered = true;
+      if (sessionId !== playbackSessionIdRef.current) return;
+      if (isManualStopRef.current || !isPlayingRef.current) return;
 
-    const cacheKey = `edge_${voiceToUse}_${speedRef.current.toFixed(2)}_${cleanText}`;
+      const currentList = paragraphsRef.current;
+      if (idx < currentList.length - 1) {
+        const nextIdx = idx + 1;
+        activeIdxRef.current = nextIdx;
+        onParagraphChange(nextIdx);
+        playParagraph(nextIdx);
+      } else if (hasNextChapter && onNextChapter) {
+        setIsLoading(true);
+        onNextChapter();
+      } else {
+        setIsPlaying(false);
+        isPlayingRef.current = false;
+      }
+    };
+
+    const cacheKey = `edge_${voiceToUse}_${speedToUse.toFixed(2)}_${cleanText}`;
     const isAlreadyCached = audioCacheRef.current.has(cacheKey);
     if (!isAlreadyCached) {
       setIsLoading(true);
@@ -390,10 +481,10 @@ export function AudioPlayer({
 
     let url: string;
     try {
-      url = await fetchAudioWithRetry(cleanText, voiceToUse, speedRef.current);
+      url = await fetchAudioWithRetry(cleanText, voiceToUse, speedToUse);
     } catch (err: any) {
       if (sessionId !== playbackSessionIdRef.current) return;
-      console.warn('TTS request error after retries:', err);
+      console.warn('TTS synthesis failed:', err);
       setIsLoading(false);
       setIsPlaying(false);
       isPlayingRef.current = false;
@@ -413,27 +504,6 @@ export function AudioPlayer({
     audio.playbackRate = speedRef.current;
     audio.muted = isMutedRef.current;
 
-    let hasEndedTriggered = false;
-    const triggerNext = () => {
-      if (hasEndedTriggered) return;
-      hasEndedTriggered = true;
-      if (sessionId !== playbackSessionIdRef.current) return;
-      if (isManualStopRef.current || !isPlayingRef.current) return;
-
-      const currentList = paragraphsRef.current;
-      if (idx < currentList.length - 1) {
-        const nextIdx = idx + 1;
-        activeIdxRef.current = nextIdx;
-        onParagraphChange(nextIdx);
-        playParagraph(nextIdx, voiceToUse);
-      } else if (hasNextChapter && onNextChapter) {
-        setIsLoading(true);
-        onNextChapter();
-      } else {
-        setIsPlaying(false);
-        isPlayingRef.current = false;
-      }
-    };
 
     audio.ontimeupdate = () => {
       if (sessionId !== playbackSessionIdRef.current) return;
@@ -638,13 +708,13 @@ export function AudioPlayer({
   };
 
   const handleSelectVoice = (vId: string) => {
-    if (vId === selectedVoiceRef.current) {
-      setShowVoiceMenu(false);
-      return;
-    }
     selectedVoiceRef.current = vId;
     setSelectedVoice(vId);
     setShowVoiceMenu(false);
+
+    // Clear client-side prefetch/audio cache so the new voice is immediately loaded
+    audioCacheRef.current.clear();
+
     try {
       localStorage.setItem('review_tts_voice', vId);
     } catch {}
@@ -653,7 +723,7 @@ export function AudioPlayer({
     fetch('/api/settings', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ edge_voice: vId }),
+      body: JSON.stringify({ edge_voice: vId, volcano_voice_type: vId }),
     }).catch(() => {});
 
     // If currently playing, immediately re-read the current paragraph with the newly selected voice
@@ -670,7 +740,14 @@ export function AudioPlayer({
 
   const totalParagraphs = paragraphs.length;
 
-  const currentVoiceObj = CHINESE_VOICES.find((v) => v.id === selectedVoice) || CHINESE_VOICES[0];
+  const currentVoiceObj = ALL_AI_VOICES.find((v) => v.id === selectedVoice) || ALL_AI_VOICES[0];
+  const currentVoiceLabel = currentVoiceObj.name.split(' (')[0];
+
+  const filteredVoices = ALL_AI_VOICES.filter((v) => {
+    if (voiceCategory === 'doubao') return v.provider === '豆包大模型';
+    if (voiceCategory === 'edge') return v.provider === '经典神经语音';
+    return true;
+  });
 
   return (
     <>
@@ -773,10 +850,10 @@ export function AudioPlayer({
                 <div className="hidden md:flex items-center ml-2">
                   <span
                     className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800"
-                    title="微软 Edge 神经语音 · 完全免费 · 免Token"
+                    title="高保真 AI 语音 · 秒级响应"
                   >
                     <Zap className="w-2.5 h-2.5 text-emerald-500" />
-                    <span>Edge 神经语音 · 免Token</span>
+                    <span>{currentVoiceObj.provider} · 极速秒播</span>
                   </span>
                 </div>
               </div>
@@ -792,10 +869,10 @@ export function AudioPlayer({
                       setShowTimerMenu(false);
                     }}
                     className="flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 hover:bg-amber-100 transition"
-                    title="切换朗读音色"
+                    title="切换朗读音色与引擎"
                   >
                     <Sparkles className="w-3 h-3 shrink-0 text-amber-500" />
-                    <span className="max-w-[110px] sm:max-w-[150px] truncate">{currentVoiceObj.name.split(' (')[0]}</span>
+                    <span className="max-w-[110px] sm:max-w-[150px] truncate">{currentVoiceLabel}</span>
                     <ChevronDown className="w-3 h-3 text-amber-500/70" />
                   </button>
 
@@ -806,10 +883,10 @@ export function AudioPlayer({
                         className="fixed inset-0 bg-black/40 backdrop-blur-[1px] z-40 sm:hidden"
                         onClick={() => setShowVoiceMenu(false)}
                       />
-                      <div className="fixed inset-x-3 bottom-24 sm:bottom-full sm:right-0 sm:left-auto mb-2 sm:w-80 max-w-[calc(100vw-24px)] bg-white dark:bg-stone-900 rounded-2xl shadow-2xl border border-stone-200 dark:border-stone-800 p-3 z-50 max-h-[65vh] sm:max-h-88 overflow-y-auto">
+                      <div className="fixed inset-x-3 bottom-24 sm:bottom-full sm:right-0 sm:left-auto mb-2 sm:w-88 max-w-[calc(100vw-24px)] bg-white dark:bg-stone-900 rounded-2xl shadow-2xl border border-stone-200 dark:border-stone-800 p-3 z-50 max-h-[70vh] sm:max-h-96 overflow-y-auto">
                         <div className="flex items-center justify-between pb-2 mb-2 border-b border-stone-100 dark:border-stone-800">
                           <span className="font-semibold text-xs text-stone-700 dark:text-stone-300">
-                            选择听审音色 (微软 Edge 神经语音)
+                            选择听审音色
                           </span>
                           <button
                             onClick={() => setShowVoiceMenu(false)}
@@ -819,9 +896,55 @@ export function AudioPlayer({
                           </button>
                         </div>
 
-                        {/* Voice Items */}
+                        {/* Voice Category Filter Tabs */}
+                        <div className="flex bg-stone-100 dark:bg-stone-800 p-0.5 rounded-xl text-xs mb-2.5">
+                          <button
+                            type="button"
+                            onClick={() => setVoiceCategory('all')}
+                            className={`flex-1 py-1 rounded-lg font-medium transition text-center ${
+                              voiceCategory === 'all'
+                                ? 'bg-white dark:bg-stone-700 text-amber-700 dark:text-amber-300 shadow-xs'
+                                : 'text-stone-500 hover:text-stone-800 dark:hover:text-stone-200'
+                            }`}
+                          >
+                            全部 ({ALL_AI_VOICES.length})
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setVoiceCategory('doubao')}
+                            className={`flex-1 py-1 rounded-lg font-medium transition text-center flex items-center justify-center gap-1 ${
+                              voiceCategory === 'doubao'
+                                ? 'bg-white dark:bg-stone-700 text-amber-700 dark:text-amber-300 shadow-xs'
+                                : 'text-stone-500 hover:text-stone-800 dark:hover:text-stone-200'
+                            }`}
+                          >
+                            <span>🔥 豆包大模型</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setVoiceCategory('edge')}
+                            className={`flex-1 py-1 rounded-lg font-medium transition text-center ${
+                              voiceCategory === 'edge'
+                                ? 'bg-white dark:bg-stone-700 text-amber-700 dark:text-amber-300 shadow-xs'
+                                : 'text-stone-500 hover:text-stone-800 dark:hover:text-stone-200'
+                            }`}
+                          >
+                            经典演播
+                          </button>
+                        </div>
+
+                        {/* Doubao / AI Voice Notice */}
+                        <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-900 dark:text-amber-200 text-[11px] mb-2 leading-relaxed">
+                          <p className="font-semibold flex items-center gap-1 mb-0.5">
+                            <Sparkles className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                            <span>豆包语音大模型已深度接入</span>
+                          </p>
+                          已全面剔除浏览器原生机械真声。搭载火山引擎·豆包超拟真语音大模型，情感细腻自然、抑扬顿挫，支持段落预加载与极速秒播。
+                        </div>
+
+                        {/* Voice list */}
                         <div className="space-y-1">
-                          {CHINESE_VOICES.map((v) => {
+                          {filteredVoices.map((v) => {
                             const isSelected = selectedVoice === v.id;
                             return (
                               <button
@@ -838,13 +961,22 @@ export function AudioPlayer({
                                     {isSelected && <Check className="w-3.5 h-3.5 text-amber-600 shrink-0" />}
                                     <span>{v.name}</span>
                                   </span>
-                                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full shrink-0 font-medium ${
-                                    v.gender === 'Male'
-                                      ? 'bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300'
-                                      : 'bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300'
-                                  }`}>
-                                    {v.gender === 'Male' ? '男声' : '女声'}
-                                  </span>
+                                  <div className="flex items-center gap-1 shrink-0">
+                                    <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-medium ${
+                                      v.provider === '豆包大模型'
+                                        ? 'bg-amber-100 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300'
+                                        : 'bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-400'
+                                    }`}>
+                                      {v.provider}
+                                    </span>
+                                    <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
+                                      v.gender === 'Male'
+                                        ? 'bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300'
+                                        : 'bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300'
+                                    }`}>
+                                      {v.gender === 'Male' ? '男声' : '女声'}
+                                    </span>
+                                  </div>
                                 </div>
                                 <span className="text-[10px] text-stone-400 leading-tight truncate mt-0.5">
                                   {v.description}

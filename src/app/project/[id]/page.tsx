@@ -20,7 +20,10 @@ import {
   Copy,
   Check,
   Loader2,
-  Edit2
+  Edit2,
+  User,
+  LogOut,
+  ShieldCheck,
 } from 'lucide-react';
 import { SidebarChapters, ChapterSummary } from '@/components/SidebarChapters';
 import { ReaderView, AnnotationItem } from '@/components/ReaderView';
@@ -29,11 +32,14 @@ import { ImportModal } from '@/components/ImportModal';
 import { EditProjectModal } from '@/components/EditProjectModal';
 import { splitParagraphs } from '@/lib/parser';
 import { copyToClipboard } from '@/lib/clipboard';
+import { useAuth } from '@/lib/AuthContext';
+import { DEFAULT_VOICE_CAST, VoiceRole, ParagraphVoiceSetting } from '@/lib/voice-cast';
 
 export default function ProjectReviewPage() {
   const params = useParams();
   const router = useRouter();
   const projectId = params.id as string;
+  const { isLoggedIn, user, logout, openLoginModal } = useAuth();
 
   const [projectTitle, setProjectTitle] = useState('');
   const [chapters, setChapters] = useState<ChapterSummary[]>([]);
@@ -44,6 +50,7 @@ export default function ProjectReviewPage() {
     content: string;
     wordCount: number;
     annotations: AnnotationItem[];
+    voiceConfig?: string | null;
   } | null>(null);
 
   const [isLoading, setIsLoading] = useState(true);
@@ -56,7 +63,13 @@ export default function ProjectReviewPage() {
     author: string | null;
     tags?: string | null;
     description?: string | null;
+    type?: string | null;
+    voiceCast?: string | null;
   } | null>(null);
+
+  const [activeCast, setActiveCast] = useState<VoiceRole[]>(DEFAULT_VOICE_CAST);
+  const [chapterVoiceConfig, setChapterVoiceConfig] = useState<Record<number, ParagraphVoiceSetting>>({});
+
   const [currentSpeakingIdx, setCurrentSpeakingIdx] = useState<number>(0);
   const [playTrigger, setPlayTrigger] = useState<number>(0);
 
@@ -79,7 +92,16 @@ export default function ProjectReviewPage() {
           author: data.data.author,
           tags: data.data.tags,
           description: data.data.description,
+          type: data.data.type,
+          voiceCast: data.data.voiceCast,
         });
+
+        if (data.data.voiceCast) {
+          try {
+            setActiveCast(JSON.parse(data.data.voiceCast));
+          } catch {}
+        }
+
         const chapList = data.data.chapters || [];
         setChapters(chapList);
 
@@ -125,7 +147,18 @@ export default function ProjectReviewPage() {
           content: data.data.content,
           wordCount: data.data.wordCount,
           annotations: data.data.annotations || [],
+          voiceConfig: data.data.voiceConfig || null,
         });
+
+        if (data.data.voiceConfig) {
+          try {
+            setChapterVoiceConfig(JSON.parse(data.data.voiceConfig));
+          } catch {
+            setChapterVoiceConfig({});
+          }
+        } else {
+          setChapterVoiceConfig({});
+        }
 
         const resumeIdx = pendingResumeParaIdxRef.current;
         pendingResumeParaIdxRef.current = null; // consume it
@@ -148,6 +181,35 @@ export default function ProjectReviewPage() {
       console.error(e);
     }
   }, []);
+
+  // Update Voice Cast for Project
+  const handleUpdateCast = async (newCast: VoiceRole[]) => {
+    setActiveCast(newCast);
+    try {
+      await fetch(`/api/projects/${projectId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ voiceCast: JSON.stringify(newCast) }),
+      });
+    } catch (e) {
+      console.error('Failed to save voice cast:', e);
+    }
+  };
+
+  // Update Voice Config for Current Chapter
+  const handleUpdateVoiceConfig = async (newConfig: Record<number, ParagraphVoiceSetting>) => {
+    setChapterVoiceConfig(newConfig);
+    if (!currentChapterId) return;
+    try {
+      await fetch(`/api/chapters/${currentChapterId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ voiceConfig: JSON.stringify(newConfig) }),
+      });
+    } catch (e) {
+      console.error('Failed to save chapter voice config:', e);
+    }
+  };
 
   useEffect(() => {
     if (currentChapterId) {
@@ -425,7 +487,13 @@ export default function ProjectReviewPage() {
           <span className="text-stone-300 dark:text-stone-700">/</span>
 
           <div
-            onClick={() => setIsEditProjectOpen(true)}
+            onClick={() => {
+              if (!isLoggedIn) {
+                openLoginModal(() => setIsEditProjectOpen(true));
+                return;
+              }
+              setIsEditProjectOpen(true);
+            }}
             className="flex items-center gap-1.5 px-2 py-1 -mx-2 rounded-xl hover:bg-stone-100 dark:hover:bg-stone-800 cursor-pointer group/title transition"
             title="点击修改作品信息（书名、作者等）"
           >
@@ -433,13 +501,51 @@ export default function ProjectReviewPage() {
               {projectTitle || '长篇小说审稿'}
             </h1>
             <Edit2 className="w-3 h-3 text-stone-400 opacity-60 group-hover/title:opacity-100 group-hover/title:text-amber-500 transition shrink-0" />
+            {projectInfo?.type === 'audiobook' && (
+              <span className="text-[10.5px] font-semibold px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800 shrink-0">
+                🎙️ 有声工坊
+              </span>
+            )}
           </div>
         </div>
 
-        {/* Right Tools: Import, Export & Settings */}
+        {/* Right Tools: Import, Export, Auth Status & Settings */}
         <div className="flex items-center gap-2">
+          {/* Identity & Login Status Badge */}
+          {isLoggedIn ? (
+            <div className="flex items-center gap-1.5 bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-900/60 pl-2.5 pr-1.5 py-1 rounded-xl text-xs text-amber-800 dark:text-amber-200">
+              <ShieldCheck className="w-3.5 h-3.5 text-amber-600" />
+              <span className="font-medium hidden sm:inline">{user?.displayName || user?.username || '作者'}</span>
+              <button
+                type="button"
+                onClick={logout}
+                className="p-1 rounded-lg text-amber-700 dark:text-amber-300 hover:bg-amber-200/60 dark:hover:bg-amber-900/80 transition ml-0.5"
+                title="退出作者登录"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => openLoginModal()}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-stone-100 dark:bg-stone-800 hover:bg-stone-200 dark:hover:bg-stone-700 text-stone-600 dark:text-stone-300 text-xs font-medium transition"
+              title="点击登录作者账号以解锁编辑权限"
+            >
+              <User className="w-3.5 h-3.5 text-stone-400" />
+              <span className="hidden sm:inline">游客 (点击登录)</span>
+              <span className="sm:hidden">登录</span>
+            </button>
+          )}
+
           <button
-            onClick={() => setIsImportModalOpen(true)}
+            onClick={() => {
+              if (!isLoggedIn) {
+                openLoginModal(() => setIsImportModalOpen(true));
+                return;
+              }
+              setIsImportModalOpen(true);
+            }}
             className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 hover:bg-amber-100 dark:hover:bg-amber-900/60 text-amber-800 dark:text-amber-300 text-xs font-semibold transition"
             title="导入新文稿或追加章节"
           >
@@ -560,6 +666,11 @@ export default function ProjectReviewPage() {
               onNextChapter={() => handleNextChapter(false)}
               hasPrev={hasPrev}
               hasNext={hasNext}
+              projectType={projectInfo?.type}
+              voiceCast={activeCast}
+              voiceConfig={chapterVoiceConfig}
+              onUpdateCast={handleUpdateCast}
+              onUpdateVoiceConfig={handleUpdateVoiceConfig}
             />
           )}
         </div>
@@ -598,6 +709,8 @@ export default function ProjectReviewPage() {
           hasPrevChapter={hasPrev}
           hasNextChapter={hasNext}
           playTrigger={playTrigger}
+          voiceCast={activeCast}
+          voiceConfig={chapterVoiceConfig}
         />
       )}
     </div>

@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { countWords } from '@/lib/parser';
+import { getAuthFromRequest } from '@/lib/auth';
+
+export const dynamic = 'force-dynamic';
 
 // GET /api/chapters/[id] - Get chapter with full content and annotations
 export async function GET(
@@ -46,8 +49,13 @@ export async function PUT(
   { params }: { params: { id: string } }
 ) {
   try {
+    const auth = getAuthFromRequest(req);
+    if (!auth.isLoggedIn) {
+      return NextResponse.json({ success: false, message: '请先登录作者账号以编辑文稿' }, { status: 401 });
+    }
+
     const body = await req.json();
-    const { title, content, status, audioUrl, orderIndex } = body;
+    const { title, content, status, audioUrl, orderIndex, voiceConfig } = body;
 
     const existing = await prisma.chapter.findUnique({
       where: { id: params.id },
@@ -68,6 +76,7 @@ export async function PUT(
         ...(content !== undefined && { content, wordCount: newWordCount }),
         ...(status !== undefined && { status }),
         ...(audioUrl !== undefined && { audioUrl }),
+        ...(voiceConfig !== undefined && { voiceConfig: typeof voiceConfig === 'string' ? voiceConfig : JSON.stringify(voiceConfig) }),
         ...(orderIndex !== undefined && { orderIndex }),
       },
       include: {
@@ -99,6 +108,10 @@ export async function DELETE(
   { params }: { params: { id: string } }
 ) {
   try {
+    const auth = getAuthFromRequest(req);
+    if (!auth.isLoggedIn) {
+      return NextResponse.json({ success: false, message: '请先登录作者账号以删除章节' }, { status: 401 });
+    }
     const existing = await prisma.chapter.findUnique({
       where: { id: params.id },
       select: { wordCount: true, projectId: true },

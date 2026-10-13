@@ -13,7 +13,9 @@ import {
   RefreshCw,
   Layers,
   Folder,
-  Files
+  Files,
+  BookOpen,
+  Mic
 } from 'lucide-react';
 import { parseNovelText, ParsedChapter, countWords } from '@/lib/parser';
 
@@ -34,6 +36,7 @@ export function ImportModal({
 }: ImportModalProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [projectType, setProjectType] = useState<'novel' | 'audiobook'>('novel');
   const [bookTitle, setBookTitle] = useState(targetProjectTitle || '');
   const [author, setAuthor] = useState('作家本人');
   const [tags, setTags] = useState('长篇小说');
@@ -275,7 +278,8 @@ export function ImportModal({
           body: JSON.stringify({
             title: bookTitle.trim(),
             author: author.trim(),
-            tags: tags.trim(),
+            tags: tags.trim() || (projectType === 'audiobook' ? '有声工坊' : '长篇小说'),
+            type: projectType,
             chapters: parsedChapters,
           }),
         });
@@ -301,14 +305,26 @@ export function ImportModal({
         {/* Header */}
         <div className="p-5 border-b border-stone-200 dark:border-stone-800 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-2xl bg-amber-500/10 dark:bg-amber-400/20 text-amber-600 dark:text-amber-400 flex items-center justify-center font-bold">
-              <BookPlus className="w-5 h-5" />
+            <div className={`w-9 h-9 rounded-2xl flex items-center justify-center font-bold transition ${
+              projectType === 'audiobook'
+                ? 'bg-purple-500/10 text-purple-600 dark:text-purple-400'
+                : 'bg-amber-500/10 text-amber-600 dark:text-amber-400'
+            }`}>
+              {projectType === 'audiobook' ? <Mic className="w-5 h-5" /> : <BookPlus className="w-5 h-5" />}
             </div>
             <div>
               <h2 className="text-base font-bold">
-                {targetProjectId ? `导入新文章到《${targetProjectTitle || '当前小说'}》` : '导入小说文稿 / 新建审稿项目'}
+                {targetProjectId
+                  ? `导入新文章到《${targetProjectTitle || '当前小说'}》`
+                  : projectType === 'audiobook'
+                  ? '新建 AI 多角色有声工坊 / 配音作品'
+                  : '导入小说文稿 / 新建审稿项目'}
               </h2>
-              <p className="text-xs text-stone-500">支持拖入整个文件夹、批量TXT/MD文件，自动自然排序与智能分章</p>
+              <p className="text-xs text-stone-500">
+                {projectType === 'audiobook'
+                  ? '支持按自然段分配多角色配音，一键分段/整篇导出广播剧音频与字幕'
+                  : '支持拖入整个文件夹、批量TXT/MD文件，自动自然排序与智能分章'}
+              </p>
             </div>
           </div>
           <button
@@ -321,6 +337,70 @@ export function ImportModal({
 
         {/* Content Body */}
         <div className="flex-1 overflow-y-auto p-5 space-y-4">
+          {/* Project Mode Selector (Only for New Project) */}
+          {!targetProjectId && (
+            <div className="space-y-1.5">
+              <label className="block text-xs font-semibold text-stone-700 dark:text-stone-300">
+                选择作品类型
+              </label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <div
+                  onClick={() => {
+                    setProjectType('novel');
+                    setTags('长篇小说');
+                  }}
+                  className={`p-3 rounded-2xl border cursor-pointer transition flex items-start gap-3 select-none ${
+                    projectType === 'novel'
+                      ? 'border-amber-500 bg-amber-50/60 dark:bg-amber-950/30 ring-1 ring-amber-500 shadow-xs'
+                      : 'border-stone-200 dark:border-stone-800 hover:border-stone-300 dark:hover:border-stone-700 bg-stone-50/30 dark:bg-stone-800/30'
+                  }`}
+                >
+                  <div className={`p-2 rounded-xl shrink-0 ${
+                    projectType === 'novel' ? 'bg-amber-500 text-white' : 'bg-stone-100 dark:bg-stone-800 text-stone-500'
+                  }`}>
+                    <BookOpen className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-1.5 font-bold text-xs text-stone-900 dark:text-stone-100">
+                      <span>📖 文学长篇审阅</span>
+                      {projectType === 'novel' && <span className="text-[10px] text-amber-600 dark:text-amber-400 font-semibold">● 当前</span>}
+                    </div>
+                    <p className="text-[11px] text-stone-500 dark:text-stone-400 mt-0.5 leading-tight">
+                      专注于文本错别字校对、段落建议批注与长篇小说听阅。
+                    </p>
+                  </div>
+                </div>
+
+                <div
+                  onClick={() => {
+                    setProjectType('audiobook');
+                    setTags('有声工坊');
+                  }}
+                  className={`p-3 rounded-2xl border cursor-pointer transition flex items-start gap-3 select-none ${
+                    projectType === 'audiobook'
+                      ? 'border-purple-500 bg-purple-50/60 dark:bg-purple-950/30 ring-1 ring-purple-500 shadow-xs'
+                      : 'border-stone-200 dark:border-stone-800 hover:border-stone-300 dark:hover:border-stone-700 bg-stone-50/30 dark:bg-stone-800/30'
+                  }`}
+                >
+                  <div className={`p-2 rounded-xl shrink-0 ${
+                    projectType === 'audiobook' ? 'bg-purple-600 text-white' : 'bg-stone-100 dark:bg-stone-800 text-stone-500'
+                  }`}>
+                    <Mic className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-1.5 font-bold text-xs text-stone-900 dark:text-stone-100">
+                      <span>🎙️ AI 有声工坊</span>
+                      {projectType === 'audiobook' && <span className="text-[10px] text-purple-600 dark:text-purple-400 font-semibold">● 当前</span>}
+                    </div>
+                    <p className="text-[11px] text-stone-500 dark:text-stone-400 mt-0.5 leading-tight">
+                      多角色配音剧本、语气模板、分段/整篇导出音频与字幕。
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Metadata Inputs (Only for New Project) */}
           {!targetProjectId && (
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -328,17 +408,17 @@ export function ImportModal({
                 <label className="block text-xs font-medium text-stone-500 mb-1">作品名称 / 书名 *</label>
                 <input
                   type="text"
-                  placeholder="例如：剑来 / 诡秘之主 / 凡人修仙传..."
+                  placeholder={projectType === 'audiobook' ? '例如：玄幻热血短剧 / 两人对谈播客第1期...' : '例如：剑来 / 诡秘之主 / 凡人修仙传...'}
                   value={bookTitle}
                   onChange={(e) => setBookTitle(e.target.value)}
                   className="w-full px-3 py-2 text-xs rounded-xl bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 text-stone-900 dark:text-stone-100 focus:outline-none focus:ring-2 focus:ring-amber-500 font-medium"
                 />
               </div>
               <div>
-                <label className="block text-xs font-medium text-stone-500 mb-1">作者笔名</label>
+                <label className="block text-xs font-medium text-stone-500 mb-1">作者 / 制作人</label>
                 <input
                   type="text"
-                  placeholder="作者姓名"
+                  placeholder="作者或主播名"
                   value={author}
                   onChange={(e) => setAuthor(e.target.value)}
                   className="w-full px-3 py-2 text-xs rounded-xl bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 text-stone-900 dark:text-stone-100 focus:outline-none focus:ring-2 focus:ring-amber-500"
@@ -475,7 +555,13 @@ export function ImportModal({
             ) : (
               <>
                 <CheckCircle2 className="w-3.5 h-3.5" />
-                <span>{targetProjectId ? `确认追加导入这 ${parsedChapters.length} 章` : '确认创建并开始审稿'}</span>
+                <span>
+                  {targetProjectId
+                    ? `确认追加导入这 ${parsedChapters.length} 章`
+                    : projectType === 'audiobook'
+                    ? '确认创建并进入配音工坊'
+                    : '确认创建并开始审稿'}
+                </span>
               </>
             )}
           </button>

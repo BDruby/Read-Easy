@@ -21,6 +21,9 @@ export const viewport: Viewport = {
   themeColor: '#FAF8F5',
 };
 
+import { AuthProvider } from '@/lib/AuthContext';
+import { LoginModal } from '@/components/LoginModal';
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -29,7 +32,10 @@ export default function RootLayout({
   return (
     <html lang="zh-CN">
       <body className="antialiased selection:bg-amber-500/20 selection:text-amber-900">
-        {children}
+        <AuthProvider>
+          {children}
+          <LoginModal />
+        </AuthProvider>
       </body>
     </html>
   );

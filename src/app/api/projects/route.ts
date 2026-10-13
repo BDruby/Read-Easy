@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { parseNovelText } from '@/lib/parser';
 
+export const dynamic = 'force-dynamic';
+
 // GET /api/projects - List all projects
 export async function GET() {
   try {
@@ -27,7 +29,7 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { title, description, author, tags, rawText, chapters: inputChapters } = body;
+    const { title, description, author, tags, type, voiceCast, rawText, chapters: inputChapters } = body;
 
     let totalWordCount = 0;
     let chaptersToCreate: Array<{ title: string; content: string; wordCount: number; orderIndex: number }> = [];
@@ -46,12 +48,17 @@ export async function POST(req: NextRequest) {
       totalWordCount = parsed.totalWords;
     }
 
+    const projectType = type || (tags?.includes('有声') ? 'audiobook' : 'novel');
+    const projectTags = tags || (projectType === 'audiobook' ? '有声工坊' : '长篇小说');
+
     const project = await prisma.project.create({
       data: {
-        title: title || '新书项目',
+        title: title || (projectType === 'audiobook' ? '新建配音作品' : '新书项目'),
         description: description || '',
         author: author || '作家本人',
-        tags: tags || '长篇小说',
+        tags: projectTags,
+        type: projectType,
+        voiceCast: typeof voiceCast === 'string' ? voiceCast : (voiceCast ? JSON.stringify(voiceCast) : null),
         wordCount: totalWordCount,
         chapterCount: chaptersToCreate.length,
         chapters: {

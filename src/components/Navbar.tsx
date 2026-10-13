@@ -11,8 +11,12 @@ import {
   Feather,
   Database,
   CloudUpload,
-  ExternalLink
+  ExternalLink,
+  User,
+  LogOut,
+  ShieldCheck,
 } from 'lucide-react';
+import { useAuth } from '@/lib/AuthContext';
 
 export interface NavbarProps {
   onOpenImport?: () => void;
@@ -20,6 +24,17 @@ export interface NavbarProps {
 
 export function Navbar({ onOpenImport }: NavbarProps) {
   const pathname = usePathname();
+  const { isLoggedIn, user, logout, openLoginModal } = useAuth();
+
+  const handleImportClick = () => {
+    if (!isLoggedIn) {
+      openLoginModal(() => {
+        onOpenImport?.();
+      });
+      return;
+    }
+    onOpenImport?.();
+  };
 
   return (
     <header className="sticky top-0 z-30 bg-white/80 dark:bg-stone-900/80 backdrop-blur-xl border-b border-stone-200/80 dark:border-stone-800">
@@ -41,13 +56,40 @@ export function Navbar({ onOpenImport }: NavbarProps) {
 
         {/* Action Controls */}
         <div className="flex items-center gap-2 sm:gap-3">
+          {/* Identity & Login Status Badge */}
+          {isLoggedIn ? (
+            <div className="flex items-center gap-1.5 bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-900/60 pl-2.5 pr-1.5 py-1 rounded-xl text-xs text-amber-800 dark:text-amber-200">
+              <ShieldCheck className="w-3.5 h-3.5 text-amber-600" />
+              <span className="font-medium hidden sm:inline">{user?.displayName || user?.username || '作者'}</span>
+              <button
+                type="button"
+                onClick={logout}
+                className="p-1 rounded-lg text-amber-700 dark:text-amber-300 hover:bg-amber-200/60 dark:hover:bg-amber-900/80 transition ml-1"
+                title="退出作者登录"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => openLoginModal()}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-stone-100 dark:bg-stone-800 hover:bg-stone-200 dark:hover:bg-stone-700 text-stone-600 dark:text-stone-300 text-xs font-medium transition"
+              title="点击登录作者账号以编辑文稿"
+            >
+              <User className="w-3.5 h-3.5 text-stone-400" />
+              <span>游客模式 (点击登录)</span>
+            </button>
+          )}
+
           {onOpenImport && (
             <button
-              onClick={onOpenImport}
+              onClick={handleImportClick}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 active:scale-95 text-white text-xs font-semibold shadow-sm transition"
             >
               <Plus className="w-4 h-4" />
-              <span>新建 / 导入作品</span>
+              <span className="hidden sm:inline">新建 / 导入作品</span>
+              <span className="sm:hidden">导入</span>
             </button>
           )}
 
@@ -56,7 +98,7 @@ export function Navbar({ onOpenImport }: NavbarProps) {
             className={`p-2 rounded-xl text-stone-600 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-stone-800 transition ${
               pathname === '/settings' ? 'bg-stone-100 dark:bg-stone-800 text-amber-600' : ''
             }`}
-            title="系统设置 (语音模型 / Cloudflare R2 / 数据库)"
+            title="系统设置 (作者账号 / 语音模型 / R2 / 数据库)"
           >
             <Settings className="w-4 h-4 sm:w-5 sm:h-5" />
           </Link>

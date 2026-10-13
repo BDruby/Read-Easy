@@ -19,6 +19,7 @@ import {
   Check
 } from 'lucide-react';
 import { copyToClipboard } from '@/lib/clipboard';
+import { useAuth } from '@/lib/AuthContext';
 
 export interface ChapterSummary {
   id: string;
@@ -53,6 +54,7 @@ export function SidebarChapters({
   isOpen,
   onClose,
 }: SidebarChaptersProps) {
+  const { isLoggedIn, openLoginModal } = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
   const [showAddInput, setShowAddInput] = useState(false);
   const [newTitle, setNewTitle] = useState('');
@@ -88,6 +90,12 @@ export function SidebarChapters({
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTitle.trim()) return;
+    if (!isLoggedIn) {
+      openLoginModal(() => {
+        handleAdd(e);
+      });
+      return;
+    }
     setIsAdding(true);
     try {
       await onAddChapter(newTitle.trim());
@@ -102,6 +110,14 @@ export function SidebarChapters({
 
   const handleDelete = (e: React.MouseEvent, chap: ChapterSummary) => {
     e.stopPropagation();
+    if (!isLoggedIn) {
+      openLoginModal(() => {
+        if (confirm(`确定要删除章节「${chap.title}」吗？删除后该章节的批注也将被移除。`)) {
+          onDeleteChapter(chap.id);
+        }
+      });
+      return;
+    }
     if (confirm(`确定要删除章节「${chap.title}」吗？删除后该章节的批注也将被移除。`)) {
       onDeleteChapter(chap.id);
     }
@@ -168,7 +184,13 @@ export function SidebarChapters({
           <div className="flex items-center gap-2">
             {!showAddInput ? (
               <button
-                onClick={() => setShowAddInput(true)}
+                onClick={() => {
+                  if (!isLoggedIn) {
+                    openLoginModal(() => setShowAddInput(true));
+                    return;
+                  }
+                  setShowAddInput(true);
+                }}
                 className="flex-1 py-1.5 px-2.5 rounded-xl border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800 text-xs font-medium text-stone-700 dark:text-stone-300 hover:border-amber-500 hover:text-amber-600 dark:hover:text-amber-400 flex items-center justify-center gap-1 shadow-sm transition"
               >
                 <Plus className="w-3.5 h-3.5" />
@@ -178,7 +200,13 @@ export function SidebarChapters({
 
             {onOpenImport && (
               <button
-                onClick={onOpenImport}
+                onClick={() => {
+                  if (!isLoggedIn) {
+                    openLoginModal(onOpenImport);
+                    return;
+                  }
+                  onOpenImport();
+                }}
                 className="flex-1 py-1.5 px-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 text-xs font-medium text-amber-800 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/60 flex items-center justify-center gap-1 transition"
                 title="批量拖入或选择文件夹/文件导入到此书"
               >

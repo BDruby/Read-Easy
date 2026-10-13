@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { getAuthFromRequest } from '@/lib/auth';
+
+export const dynamic = 'force-dynamic';
 
 // GET /api/projects/[id]
 export async function GET(
@@ -45,8 +48,13 @@ export async function PUT(
   { params }: { params: { id: string } }
 ) {
   try {
+    const auth = getAuthFromRequest(req);
+    if (!auth.isLoggedIn) {
+      return NextResponse.json({ success: false, message: '请先登录作者账号以修改作品信息' }, { status: 401 });
+    }
+
     const body = await req.json();
-    const { title, description, author, tags, status } = body;
+    const { title, description, author, tags, type, voiceCast, status } = body;
 
     const updated = await prisma.project.update({
       where: { id: params.id },
@@ -55,6 +63,8 @@ export async function PUT(
         ...(description !== undefined && { description }),
         ...(author && { author }),
         ...(tags && { tags }),
+        ...(type && { type }),
+        ...(voiceCast !== undefined && { voiceCast: typeof voiceCast === 'string' ? voiceCast : JSON.stringify(voiceCast) }),
         ...(status && { status }),
       },
     });
@@ -75,6 +85,11 @@ export async function DELETE(
   { params }: { params: { id: string } }
 ) {
   try {
+    const auth = getAuthFromRequest(req);
+    if (!auth.isLoggedIn) {
+      return NextResponse.json({ success: false, message: '请先登录作者账号以删除作品' }, { status: 401 });
+    }
+
     await prisma.project.delete({
       where: { id: params.id },
     });

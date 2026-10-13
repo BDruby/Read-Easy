@@ -18,16 +18,24 @@ import {
   Server,
   Key,
   Globe,
-  Radio
+  Radio,
+  ShieldCheck,
 } from 'lucide-react';
 import { Navbar } from '@/components/Navbar';
 import { CHINESE_VOICES } from '@/lib/tts/edge-tts';
 
 export default function SettingsPage() {
-  const [activeTab, setActiveTab] = useState<'tts' | 'r2' | 'database' | 'vercel'>('tts');
+  const [activeTab, setActiveTab] = useState<'tts' | 'r2' | 'database' | 'vercel' | 'auth'>('tts');
 
-  // TTS Form State (Microsoft Edge Neural Only)
+  // TTS Form State (Volcano Doubao TTS & Edge / Azure Speech)
+  const [volcanoAppId, setVolcanoAppId] = useState('');
+  const [volcanoAccessToken, setVolcanoAccessToken] = useState('');
+  const [volcanoSecretKey, setVolcanoSecretKey] = useState('');
+  const [hasVolcanoKey, setHasVolcanoKey] = useState(false);
   const [edgeVoice, setEdgeVoice] = useState('zh-CN-YunjianNeural');
+  const [azureSpeechKey, setAzureSpeechKey] = useState('');
+  const [azureSpeechRegion, setAzureSpeechRegion] = useState('eastus');
+  const [hasAzureKey, setHasAzureKey] = useState(false);
 
   // Cloudflare R2 Form State
   const [r2AccountId, setR2AccountId] = useState('');
@@ -35,6 +43,11 @@ export default function SettingsPage() {
   const [r2SecretAccessKey, setR2SecretAccessKey] = useState('');
   const [r2BucketName, setR2BucketName] = useState('');
   const [r2PublicDomain, setR2PublicDomain] = useState('');
+
+  // Author Account State
+  const [adminUsername, setAdminUsername] = useState('admin');
+  const [adminDisplayName, setAdminDisplayName] = useState('作者本人');
+  const [adminPassword, setAdminPassword] = useState('');
 
   // UI Status
   const [isLoading, setIsLoading] = useState(true);
@@ -56,13 +69,24 @@ export default function SettingsPage() {
       .then((data) => {
         if (data.success && data.data) {
           const d = data.data;
+          setVolcanoAppId(d.volcano_app_id || '');
+          setVolcanoAccessToken(d.volcano_access_token || '');
+          setVolcanoSecretKey(d.volcano_secret_key || '');
+          setHasVolcanoKey(!!d.has_volcano_key);
+
           setEdgeVoice(d.edge_voice || 'zh-CN-YunjianNeural');
+          setAzureSpeechKey(d.azure_speech_key || '');
+          setAzureSpeechRegion(d.azure_speech_region || 'eastus');
+          setHasAzureKey(!!d.has_azure_key);
 
           setR2AccountId(d.r2_account_id || '');
           setR2AccessKeyId(d.r2_access_key_id || '');
           setR2SecretAccessKey(d.r2_secret_access_key || '');
           setR2BucketName(d.r2_bucket_name || '');
           setR2PublicDomain(d.r2_public_domain || '');
+
+          setAdminUsername(d.admin_username || 'admin');
+          setAdminDisplayName(d.admin_display_name || '作者本人');
         }
       })
       .catch((err) => setErrorMsg('加载配置异常: ' + err.message))
@@ -90,17 +114,28 @@ export default function SettingsPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          volcano_app_id: volcanoAppId,
+          volcano_access_token: volcanoAccessToken,
+          volcano_secret_key: volcanoSecretKey,
           edge_voice: edgeVoice,
+          azure_speech_key: azureSpeechKey,
+          azure_speech_region: azureSpeechRegion,
           r2_account_id: r2AccountId,
           r2_access_key_id: r2AccessKeyId,
           r2_secret_access_key: r2SecretAccessKey,
           r2_bucket_name: r2BucketName,
           r2_public_domain: r2PublicDomain,
+          admin_username: adminUsername,
+          admin_display_name: adminDisplayName,
+          ...(adminPassword ? { admin_password: adminPassword } : {}),
         }),
       });
 
       const data = await res.json();
       if (!data.success) throw new Error(data.message || '保存失败');
+
+      if (volcanoAccessToken.trim()) setHasVolcanoKey(true);
+      if (azureSpeechKey.trim()) setHasAzureKey(true);
 
       try {
         localStorage.setItem('review_tts_voice', edgeVoice);
@@ -217,6 +252,7 @@ export default function SettingsPage() {
         <div className="flex border-b border-stone-200 dark:border-stone-800 mb-6 gap-2 sm:gap-4 overflow-x-auto">
           {[
             { id: 'tts', label: '语音模型 (TTS)', icon: Mic },
+            { id: 'auth', label: '作者账号与安全', icon: Key },
             { id: 'r2', label: 'Cloudflare R2 存储', icon: CloudUpload },
             { id: 'database', label: 'MySQL 数据库状态', icon: Database },
             { id: 'vercel', label: '一键部署到 Vercel', icon: Server },
@@ -271,18 +307,68 @@ export default function SettingsPage() {
                 </button>
               </div>
 
-              {/* Engine Highlight Card */}
-              <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-500/10 via-stone-500/5 to-transparent border border-amber-500/20 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold text-amber-800 dark:text-amber-300">当前默认引擎：微软 Edge Neural 神经语音</span>
-                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">
-                      ⚡ 完全免费 · 永久免Token
-                    </span>
+              {/* Volcano Doubao TTS Card */}
+              <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-br from-amber-500/10 via-amber-500/5 to-transparent border border-amber-500/30 space-y-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h4 className="text-xs sm:text-sm font-bold flex items-center gap-1.5 text-stone-900 dark:text-stone-100">
+                      <Sparkles className="w-4 h-4 text-amber-500" />
+                      <span>🌋 火山引擎 · 豆包大模型语音合成 (TTS)</span>
+                    </h4>
+                    <p className="text-[11px] text-stone-500 dark:text-stone-400 mt-1 leading-relaxed">
+                      基于字节跳动豆包大模型超拟真语音算法，真实自然、情感细腻、抑扬顿挫，告别机械音。已接入多角色小说演播音色（爽快思思、醇厚青叔、灿灿、擎苍等）。
+                    </p>
                   </div>
-                  <p className="text-xs text-stone-500 dark:text-stone-400">
-                    默认首选「云健 (影视评书/热血说书)」，抑扬顿挫有张力，极度契合网文悬疑、仙侠、历史爽文校对审听。
-                  </p>
+                  {hasVolcanoKey && (
+                    <span className="shrink-0 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300">
+                      ✓ 豆包语音已接入
+                    </span>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+                  <div>
+                    <label className="block text-[11px] font-semibold text-stone-600 dark:text-stone-300 mb-1">
+                      APP ID (应用标识)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="如：4084568128"
+                      value={volcanoAppId}
+                      onChange={(e) => setVolcanoAppId(e.target.value)}
+                      className="w-full px-3 py-2 text-xs rounded-xl border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-900 text-stone-900 dark:text-stone-100 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-semibold text-stone-600 dark:text-stone-300 mb-1">
+                      Access Token (访问令牌)
+                    </label>
+                    <input
+                      type="password"
+                      placeholder="如：0clFc2sDJ_..."
+                      value={volcanoAccessToken}
+                      onChange={(e) => setVolcanoAccessToken(e.target.value)}
+                      className="w-full px-3 py-2 text-xs rounded-xl border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-900 text-stone-900 dark:text-stone-100 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-semibold text-stone-600 dark:text-stone-300 mb-1">
+                      Secret Key (密钥 · 可选)
+                    </label>
+                    <input
+                      type="password"
+                      placeholder="如：eOLoJdXg7..."
+                      value={volcanoSecretKey}
+                      onChange={(e) => setVolcanoSecretKey(e.target.value)}
+                      className="w-full px-3 py-2 text-xs rounded-xl border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-900 text-stone-900 dark:text-stone-100 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    />
+                  </div>
+                </div>
+
+                <div className="p-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900 text-[11px] text-amber-800 dark:text-amber-300 leading-relaxed">
+                  💡 <strong>重要提示：</strong> 在火山引擎控制台【语音技术 / 豆包语音】选择【语音合成】产品，确保已开通服务并将 AppID 添加授权。若遇到 403 权限提示，在火山控制台语音合成音色列表中点击开通/授权即可。
                 </div>
               </div>
 
@@ -322,6 +408,58 @@ export default function SettingsPage() {
                       </div>
                     );
                   })}
+                </div>
+              </div>
+
+              {/* Optional Azure Speech Configuration Card */}
+              <div className="p-4 sm:p-5 rounded-2xl bg-stone-50 dark:bg-stone-800/40 border border-stone-200 dark:border-stone-800 space-y-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h4 className="text-xs sm:text-sm font-bold flex items-center gap-1.5 text-stone-900 dark:text-stone-100">
+                      <Sparkles className="w-4 h-4 text-amber-500" />
+                      <span>微软官方 Azure 认知语音直连（可选 · 彻底解决云端403报错）</span>
+                    </h4>
+                    <p className="text-[11px] text-stone-500 dark:text-stone-400 mt-1 leading-relaxed">
+                      微软近期全面限制了第三方云服务器反爬逆向。若配置微软官方 Azure 语音 Key，将走官方正规 REST API：<strong>永久免费50万字/月</strong>、<strong>100%稳定永不403</strong>、且支持全部原版云健/云希等真实男女声。
+                    </p>
+                  </div>
+                  {hasAzureKey && (
+                    <span className="shrink-0 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300">
+                      ✓ 已启用官方直连
+                    </span>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                  <div>
+                    <label className="block text-[11px] font-semibold text-stone-600 dark:text-stone-300 mb-1">
+                      Azure Speech Key (密钥)
+                    </label>
+                    <input
+                      type="password"
+                      placeholder="如：a1b2c3d4e5f6... (留空则使用默认免费通道)"
+                      value={azureSpeechKey}
+                      onChange={(e) => setAzureSpeechKey(e.target.value)}
+                      className="w-full px-3 py-2 text-xs rounded-xl border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-900 text-stone-900 dark:text-stone-100 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-semibold text-stone-600 dark:text-stone-300 mb-1">
+                      Azure Region (区域)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="如：eastus, southeastasia, japaneast"
+                      value={azureSpeechRegion}
+                      onChange={(e) => setAzureSpeechRegion(e.target.value)}
+                      className="w-full px-3 py-2 text-xs rounded-xl border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-900 text-stone-900 dark:text-stone-100 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between text-[11px] text-stone-400">
+                  <span>💡 免费申请：在 portal.azure.com 创建 Speech 资源，选择 F0（免费层）即可获得 Key。</span>
                 </div>
               </div>
             </div>
@@ -525,6 +663,69 @@ export default function SettingsPage() {
                 <p className="text-stone-500">
                   4. 点击 <b>Deploy</b>，约 1 分钟即可完成部署并获得全球高速访问链接！
                 </p>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 5: Author Account & Security */}
+          {activeTab === 'auth' && (
+            <div className="space-y-6 bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-3xl p-6 shadow-sm">
+              <div className="flex items-center justify-between pb-4 border-b border-stone-100 dark:border-stone-800">
+                <div>
+                  <h3 className="font-bold text-base flex items-center gap-2">
+                    <ShieldCheck className="w-5 h-5 text-amber-500" />
+                    <span>作者管理账号与安全密码</span>
+                  </h3>
+                  <p className="text-xs text-stone-500 mt-1">
+                    系统默认允许游客只读与发表读者建议；编辑文稿、新增/删除段落与管理章节需要作者登录
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="block text-xs font-semibold text-stone-700 dark:text-stone-300">
+                    作者账号 / 用户名
+                  </label>
+                  <input
+                    type="text"
+                    value={adminUsername}
+                    onChange={(e) => setAdminUsername(e.target.value)}
+                    placeholder="admin"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-stone-800 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition"
+                  />
+                  <p className="text-[11px] text-stone-400">登录时使用的用户名，默认 admin</p>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="block text-xs font-semibold text-stone-700 dark:text-stone-300">
+                    作者对外称谓 / 昵称
+                  </label>
+                  <input
+                    type="text"
+                    value={adminDisplayName}
+                    onChange={(e) => setAdminDisplayName(e.target.value)}
+                    placeholder="作者本人"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-stone-800 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition"
+                  />
+                  <p className="text-[11px] text-stone-400">登录后在留言板和页面顶部显示的作者身份称呼</p>
+                </div>
+
+                <div className="space-y-2 md:col-span-2">
+                  <label className="block text-xs font-semibold text-stone-700 dark:text-stone-300">
+                    修改作者管理密码
+                  </label>
+                  <input
+                    type="password"
+                    value={adminPassword}
+                    onChange={(e) => setAdminPassword(e.target.value)}
+                    placeholder="若无需修改密码请留空；初始默认密码为 123456"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-stone-800 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition"
+                  />
+                  <p className="text-[11px] text-stone-400">
+                    请输入新管理密码（留空则保持当前密码不变，系统初始密码为 <code className="font-mono bg-stone-100 dark:bg-stone-800 px-1 py-0.5 rounded text-amber-600">123456</code>）
+                  </p>
+                </div>
               </div>
             </div>
           )}

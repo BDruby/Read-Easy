@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { countWords } from '@/lib/parser';
 
+export const dynamic = 'force-dynamic';
+
 // GET /api/projects/[id]/chapters - List chapters
 export async function GET(
   req: NextRequest,

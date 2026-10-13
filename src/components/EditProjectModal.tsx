@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { X, BookOpen, User, Tag, FileText, Check, Loader2 } from 'lucide-react';
+import { X, BookOpen, User, Tag, FileText, Check, Loader2, Mic } from 'lucide-react';
 
 export interface EditProjectModalProps {
   isOpen: boolean;
@@ -10,6 +10,7 @@ export interface EditProjectModalProps {
     title: string;
     author: string | null;
     tags?: string | null;
+    type?: string | null;
     description?: string | null;
   } | null;
   onClose: () => void;
@@ -18,11 +19,12 @@ export interface EditProjectModalProps {
     title: string;
     author: string | null;
     tags: string | null;
+    type?: string | null;
     description: string | null;
   }) => void;
 }
 
-const PRESET_TAGS = ['长篇小说', '玄幻仙侠', '科幻未来', '都市悬疑', '历史军事', '短篇文集'];
+const PRESET_TAGS = ['长篇小说', '玄幻仙侠', '科幻未来', '都市悬疑', '历史军事', '短篇文集', '有声工坊'];
 
 export function EditProjectModal({
   isOpen,
@@ -32,6 +34,7 @@ export function EditProjectModal({
 }: EditProjectModalProps) {
   const [title, setTitle] = useState('');
   const [author, setAuthor] = useState('');
+  const [projectType, setProjectType] = useState<'novel' | 'audiobook'>('novel');
   const [tags, setTags] = useState('长篇小说');
   const [description, setDescription] = useState('');
   const [isSaving, setIsSaving] = useState(false);
@@ -41,7 +44,9 @@ export function EditProjectModal({
     if (project) {
       setTitle(project.title || '');
       setAuthor(project.author || '作家本人');
-      setTags(project.tags || '长篇小说');
+      const pType = (project.type as any) || (project.tags?.includes('有声') ? 'audiobook' : 'novel');
+      setProjectType(pType);
+      setTags(project.tags || (pType === 'audiobook' ? '有声工坊' : '长篇小说'));
       setDescription(project.description || '');
       setErrorMsg('');
     }
@@ -66,7 +71,8 @@ export function EditProjectModal({
         body: JSON.stringify({
           title: title.trim(),
           author: author.trim() || '作家本人',
-          tags: tags.trim() || '长篇小说',
+          tags: tags.trim() || (projectType === 'audiobook' ? '有声工坊' : '长篇小说'),
+          type: projectType,
           description: description.trim(),
         }),
       });
@@ -80,7 +86,8 @@ export function EditProjectModal({
         id: project.id,
         title: title.trim(),
         author: author.trim() || '作家本人',
-        tags: tags.trim() || '长篇小说',
+        tags: tags.trim() || (projectType === 'audiobook' ? '有声工坊' : '长篇小说'),
+        type: projectType,
         description: description.trim(),
       });
       onClose();
@@ -143,6 +150,46 @@ export function EditProjectModal({
                 required
                 className="w-full pl-10 pr-3 py-2 text-sm rounded-xl bg-stone-50 dark:bg-stone-950 border border-stone-200 dark:border-stone-800 text-stone-900 dark:text-stone-100 focus:outline-none focus:ring-2 focus:ring-amber-500"
               />
+            </div>
+          </div>
+
+          {/* Project Mode Type */}
+          <div>
+            <label className="block text-xs font-semibold text-stone-700 dark:text-stone-300 mb-1.5">
+              作品形态模式
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setProjectType('novel');
+                  if (tags === '有声工坊') setTags('长篇小说');
+                }}
+                className={`py-2 px-3 rounded-xl border text-xs font-medium flex items-center justify-center gap-1.5 transition ${
+                  projectType === 'novel'
+                    ? 'border-amber-500 bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 ring-1 ring-amber-500'
+                    : 'border-stone-200 dark:border-stone-800 text-stone-600 dark:text-stone-400 hover:bg-stone-50 dark:hover:bg-stone-800'
+                }`}
+              >
+                <BookOpen className="w-3.5 h-3.5" />
+                <span>📖 文学审校模式</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setProjectType('audiobook');
+                  if (tags === '长篇小说') setTags('有声工坊');
+                }}
+                className={`py-2 px-3 rounded-xl border text-xs font-medium flex items-center justify-center gap-1.5 transition ${
+                  projectType === 'audiobook'
+                    ? 'border-purple-500 bg-purple-50 dark:bg-purple-950/40 text-purple-800 dark:text-purple-300 ring-1 ring-purple-500'
+                    : 'border-stone-200 dark:border-stone-800 text-stone-600 dark:text-stone-400 hover:bg-stone-50 dark:hover:bg-stone-800'
+                }`}
+              >
+                <Mic className="w-3.5 h-3.5" />
+                <span>🎙️ AI 有声工坊</span>
+              </button>
             </div>
           </div>
 
