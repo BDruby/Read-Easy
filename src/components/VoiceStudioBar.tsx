@@ -15,10 +15,14 @@ import {
   Play,
   Check,
   Search,
+  Plus,
+  Trash2,
+  Edit2,
 } from 'lucide-react';
 import { VoiceRole, DEFAULT_VOICE_CAST, EMOTION_PRESETS, autoDetectParagraphRoles, ParagraphVoiceSetting } from '@/lib/voice-cast';
 import { DOUBAO_VOICES } from '@/lib/tts/doubao-tts';
 import { VoiceSelectorModal } from './VoiceSelectorModal';
+import { RoleEditModal } from './RoleEditModal';
 
 interface VoiceStudioBarProps {
   chapterId: string;
@@ -30,6 +34,23 @@ interface VoiceStudioBarProps {
   onUpdateVoiceConfig: (config: Record<number, ParagraphVoiceSetting>) => void;
   isLoggedIn?: boolean;
 }
+
+const getRoleDotClass = (color?: string) => {
+  switch (color) {
+    case 'blue': return 'bg-blue-400 shadow-sm shadow-blue-400/50';
+    case 'rose': return 'bg-rose-400 shadow-sm shadow-rose-400/50';
+    case 'indigo': return 'bg-indigo-400 shadow-sm shadow-indigo-400/50';
+    case 'purple': return 'bg-purple-400 shadow-sm shadow-purple-400/50';
+    case 'emerald': return 'bg-emerald-400 shadow-sm shadow-emerald-400/50';
+    case 'teal': return 'bg-teal-400 shadow-sm shadow-teal-400/50';
+    case 'orange': return 'bg-orange-400 shadow-sm shadow-orange-400/50';
+    case 'cyan': return 'bg-cyan-400 shadow-sm shadow-cyan-400/50';
+    case 'fuchsia': return 'bg-fuchsia-400 shadow-sm shadow-fuchsia-400/50';
+    case 'amber':
+    default:
+      return 'bg-amber-400 shadow-sm shadow-amber-400/50';
+  }
+};
 
 export function VoiceStudioBar({
   chapterId,
@@ -47,6 +68,8 @@ export function VoiceStudioBar({
   const [isExportingSrt, setIsExportingSrt] = useState(false);
   const [playingVoiceId, setPlayingVoiceId] = useState<string | null>(null);
   const [modalRole, setModalRole] = useState<VoiceRole | null>(null);
+  const [isAddRoleOpen, setIsAddRoleOpen] = useState(false);
+  const [editingRole, setEditingRole] = useState<VoiceRole | null>(null);
 
   // Calculate statistics
   const totalParas = paragraphs.length;
@@ -174,6 +197,47 @@ export function VoiceStudioBar({
     onUpdateCast(updated);
   };
 
+  // 6. Save (Add or Update) Role
+  const handleSaveRole = (savedRole: VoiceRole) => {
+    const existingIndex = cast.findIndex((r) => r.id === savedRole.id);
+    if (existingIndex >= 0) {
+      const updated = [...cast];
+      updated[existingIndex] = savedRole;
+      onUpdateCast(updated);
+    } else {
+      onUpdateCast([...cast, savedRole]);
+    }
+  };
+
+  // 7. Delete Role
+  const handleDeleteRole = (roleId: string, roleName: string) => {
+    if (roleId === 'narrator') {
+      alert('旁白为基础角色，不可删除');
+      return;
+    }
+
+    if (!confirm(`确定要删除角色【${roleName}】吗？已分配此角色的段落将自动恢复为旁白。`)) {
+      return;
+    }
+
+    const updated = cast.filter((r) => r.id !== roleId);
+    onUpdateCast(updated);
+
+    // Reset deleted role to narrator in voiceConfig
+    const updatedConfig = { ...voiceConfig };
+    let changed = false;
+    Object.keys(updatedConfig).forEach((k) => {
+      const idx = Number(k);
+      if (updatedConfig[idx]?.roleId === roleId) {
+        updatedConfig[idx] = { ...updatedConfig[idx], roleId: 'narrator' };
+        changed = true;
+      }
+    });
+    if (changed) {
+      onUpdateVoiceConfig(updatedConfig);
+    }
+  };
+
   return (
     <div className="bg-gradient-to-r from-purple-900/90 via-indigo-950/90 to-stone-900/90 border border-purple-500/30 rounded-3xl p-4 sm:p-5 text-white shadow-xl backdrop-blur-md mb-6 space-y-4">
       {/* Top Header Bar */}
@@ -268,83 +332,131 @@ export function VoiceStudioBar({
 
       {/* Expandable Voice Cast Management Panel */}
       {isCastOpen && (
-        <div className="pt-3 border-t border-purple-500/20 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 animate-in fade-in slide-in-from-top-2 duration-200">
-          {cast.map((role) => {
-            const currentVoiceObj = DOUBAO_VOICES.find((v) => v.id === role.voice);
+        <div className="pt-3 border-t border-purple-500/20 space-y-3 animate-in fade-in slide-in-from-top-2 duration-200">
+          {/* Header of Cast Panel with Add Role button */}
+          <div className="flex items-center justify-between pb-1">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-semibold text-purple-200">
+                配音声优阵容 ({cast.length} 位角色)
+              </span>
+              <span className="text-[11px] text-purple-300/60 hidden sm:inline">
+                · 支持自定义增加新角色、更换声线与设置色彩标识
+              </span>
+            </div>
 
-            return (
-              <div
-                key={role.id}
-                className="bg-black/25 border border-purple-400/20 rounded-2xl p-3 flex flex-col justify-between space-y-2.5"
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span
-                      className={`w-2.5 h-2.5 rounded-full ${
-                        role.color === 'rose'
-                          ? 'bg-rose-400 shadow-sm shadow-rose-400/50'
-                          : role.color === 'blue'
-                          ? 'bg-blue-400 shadow-sm shadow-blue-400/50'
-                          : role.color === 'indigo'
-                          ? 'bg-indigo-400 shadow-sm shadow-indigo-400/50'
-                          : role.color === 'purple'
-                          ? 'bg-purple-400 shadow-sm shadow-purple-400/50'
-                          : 'bg-amber-400 shadow-sm shadow-amber-400/50'
-                      }`}
-                    />
-                    <span className="font-bold text-xs text-stone-100">{role.name}</span>
-                  </div>
+            {/* Add New Custom Role Button */}
+            <button
+              type="button"
+              onClick={() => {
+                setEditingRole(null);
+                setIsAddRoleOpen(true);
+              }}
+              className="px-3 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-semibold text-xs flex items-center gap-1.5 shadow-sm transition active:scale-95"
+              title="新增自定义角色（如女配角、反派手下、神秘人、系统音等）"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>新增角色</span>
+            </button>
+          </div>
 
-                  <div className="flex items-center gap-1.5">
-                    {/* Search Library Button */}
-                    <button
-                      type="button"
-                      onClick={() => setModalRole(role)}
-                      className="p-1 px-2 rounded-lg text-purple-300 hover:text-white hover:bg-purple-500/30 transition text-[11px] flex items-center gap-1 border border-purple-500/30"
-                      title="打开官方音色库进行分类筛选与搜索"
-                    >
-                      <Search className="w-3 h-3 text-purple-300" />
-                      <span>库中搜索</span>
-                    </button>
+          {/* Role Cards Grid */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {cast.map((role) => {
+              const currentVoiceObj = DOUBAO_VOICES.find((v) => v.id === role.voice);
 
-                    {/* Play Voice Sample Button */}
-                    <button
-                      type="button"
-                      onClick={() => handleTestPlayVoice(role.voice)}
-                      disabled={playingVoiceId === role.voice}
-                      className="p-1 px-2 rounded-lg text-purple-300 hover:text-white hover:bg-purple-500/30 transition text-[11px] flex items-center gap-1 border border-purple-500/20"
-                      title="试听当前声优原声"
-                    >
-                      {playingVoiceId === role.voice ? (
-                        <Loader2 className="w-3 h-3 animate-spin text-purple-300" />
-                      ) : (
-                        <Volume2 className="w-3 h-3" />
+              return (
+                <div
+                  key={role.id}
+                  className="bg-black/25 border border-purple-400/20 rounded-2xl p-3 flex flex-col justify-between space-y-2.5 relative group"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className={`w-2.5 h-2.5 rounded-full ${getRoleDotClass(role.color)}`} />
+                      <span className="font-bold text-xs text-stone-100">{role.name}</span>
+                      {role.isCustom && (
+                        <span className="text-[9.5px] px-1.5 py-0.2 rounded-md bg-purple-500/30 text-purple-200 border border-purple-400/30">
+                          自定义
+                        </span>
                       )}
-                      <span>试听</span>
-                    </button>
+                    </div>
+
+                    <div className="flex items-center gap-1">
+                      {/* Edit Role Button */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingRole(role);
+                          setIsAddRoleOpen(true);
+                        }}
+                        className="p-1 px-1.5 rounded-lg text-purple-300 hover:text-white hover:bg-purple-500/30 transition text-[11px] flex items-center gap-0.5"
+                        title="修改角色名称、色彩与简介"
+                      >
+                        <Edit2 className="w-3 h-3 text-purple-300" />
+                        <span className="hidden sm:inline">编辑</span>
+                      </button>
+
+                      {/* Delete Role Button (narrator cannot be deleted) */}
+                      {role.id !== 'narrator' && (
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteRole(role.id, role.name)}
+                          className="p-1 px-1.5 rounded-lg text-stone-400 hover:text-red-300 hover:bg-red-500/20 transition text-[11px]"
+                          title="删除此角色"
+                        >
+                          <Trash2 className="w-3 h-3 text-red-400" />
+                        </button>
+                      )}
+
+                      {/* Search Library Button */}
+                      <button
+                        type="button"
+                        onClick={() => setModalRole(role)}
+                        className="p-1 px-1.5 rounded-lg text-purple-300 hover:text-white hover:bg-purple-500/30 transition text-[11px] flex items-center gap-0.5 border border-purple-500/30"
+                        title="打开官方音色库进行分类筛选与搜索"
+                      >
+                        <Search className="w-3 h-3 text-purple-300" />
+                        <span>换音色</span>
+                      </button>
+
+                      {/* Play Voice Sample Button */}
+                      <button
+                        type="button"
+                        onClick={() => handleTestPlayVoice(role.voice)}
+                        disabled={playingVoiceId === role.voice}
+                        className="p-1 px-1.5 rounded-lg text-purple-300 hover:text-white hover:bg-purple-500/30 transition text-[11px] flex items-center gap-0.5 border border-purple-500/20"
+                        title="试听当前声优原声"
+                      >
+                        {playingVoiceId === role.voice ? (
+                          <Loader2 className="w-3 h-3 animate-spin text-purple-300" />
+                        ) : (
+                          <Volume2 className="w-3 h-3" />
+                        )}
+                        <span>试听</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Voice Selector Dropdown */}
+                  <div>
+                    <select
+                      value={role.voice}
+                      onChange={(e) => handleRoleVoiceChange(role.id, e.target.value)}
+                      className="w-full bg-stone-900/90 border border-purple-500/30 rounded-xl px-2.5 py-1.5 text-xs text-purple-100 focus:outline-none focus:ring-1 focus:ring-purple-400"
+                    >
+                      {DOUBAO_VOICES.map((v) => (
+                        <option key={v.id} value={v.id}>
+                          {v.name}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="text-[10.5px] text-stone-400 mt-1 line-clamp-1">
+                      {currentVoiceObj?.description || role.description || ''}
+                    </p>
                   </div>
                 </div>
-
-                {/* Voice Selector Dropdown */}
-                <div>
-                  <select
-                    value={role.voice}
-                    onChange={(e) => handleRoleVoiceChange(role.id, e.target.value)}
-                    className="w-full bg-stone-900/90 border border-purple-500/30 rounded-xl px-2.5 py-1.5 text-xs text-purple-100 focus:outline-none focus:ring-1 focus:ring-purple-400"
-                  >
-                    {DOUBAO_VOICES.map((v) => (
-                      <option key={v.id} value={v.id}>
-                        {v.name}
-                      </option>
-                    ))}
-                  </select>
-                  <p className="text-[10.5px] text-stone-400 mt-1 line-clamp-1">
-                    {currentVoiceObj?.description || role.description || ''}
-                  </p>
-                </div>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
         </div>
       )}
 
@@ -360,6 +472,18 @@ export function VoiceStudioBar({
           }
         }}
       />
+
+      {/* Role Create & Edit Modal */}
+      <RoleEditModal
+        isOpen={isAddRoleOpen}
+        onClose={() => {
+          setIsAddRoleOpen(false);
+          setEditingRole(null);
+        }}
+        roleToEdit={editingRole}
+        onSaveRole={handleSaveRole}
+      />
     </div>
   );
 }
+

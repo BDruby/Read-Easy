@@ -7,7 +7,28 @@ export interface VoiceRole {
   gender: 'Male' | 'Female';
   color: string;
   description?: string;
+  isCustom?: boolean;
 }
+
+export interface RoleColorOption {
+  id: string;
+  name: string;
+  dotClass: string;
+  badgeClass: string;
+}
+
+export const ROLE_COLOR_OPTIONS: RoleColorOption[] = [
+  { id: 'amber', name: '琥珀金', dotClass: 'bg-amber-400', badgeClass: 'bg-amber-500/20 text-amber-300' },
+  { id: 'blue', name: '碧海蓝', dotClass: 'bg-blue-400', badgeClass: 'bg-blue-500/20 text-blue-300' },
+  { id: 'rose', name: '珊瑚粉', dotClass: 'bg-rose-400', badgeClass: 'bg-rose-500/20 text-rose-300' },
+  { id: 'indigo', name: '深靛蓝', dotClass: 'bg-indigo-400', badgeClass: 'bg-indigo-500/20 text-indigo-300' },
+  { id: 'purple', name: '紫罗兰', dotClass: 'bg-purple-400', badgeClass: 'bg-purple-500/20 text-purple-300' },
+  { id: 'emerald', name: '翡翠绿', dotClass: 'bg-emerald-400', badgeClass: 'bg-emerald-500/20 text-emerald-300' },
+  { id: 'teal', name: '青绿黛', dotClass: 'bg-teal-400', badgeClass: 'bg-teal-500/20 text-teal-300' },
+  { id: 'orange', name: '暖炽橙', dotClass: 'bg-orange-400', badgeClass: 'bg-orange-500/20 text-orange-300' },
+  { id: 'cyan', name: '天空青', dotClass: 'bg-cyan-400', badgeClass: 'bg-cyan-500/20 text-cyan-300' },
+  { id: 'fuchsia', name: '幻夜玫', dotClass: 'bg-fuchsia-400', badgeClass: 'bg-fuchsia-500/20 text-fuchsia-300' },
+];
 
 export interface ParagraphVoiceSetting {
   roleId?: string;
@@ -87,7 +108,7 @@ export const EMOTION_PRESETS: EmotionPreset[] = [
 
 /**
  * 智能剧本检测：识别小说中的对话前缀（例如：萧炎道：“……” 或 [萧炎] 等）
- * 并自动建议匹配的角色 ID
+ * 并自动建议匹配的角色 ID（支持声优阵容中的所有预设及自定义角色）
  */
 export function autoDetectParagraphRoles(
   paragraphs: string[],
@@ -118,7 +139,14 @@ export function autoDetectParagraphRoles(
     let matchedEmotion: string = 'normal';
 
     if (hasQuotes) {
-      if (matureKeywords.some((k) => trimmed.slice(0, 15).includes(k))) {
+      // 优先：检查是否匹配任何声优阵容中角色的名字（包括自定义角色）
+      const namedRole = cast.find(
+        (c) => c.id !== 'narrator' && c.name && trimmed.slice(0, 20).includes(c.name)
+      );
+
+      if (namedRole) {
+        matchedRole = namedRole;
+      } else if (matureKeywords.some((k) => trimmed.slice(0, 15).includes(k))) {
         matchedRole = matureMale || narrator;
       } else if (femaleKeywords.some((k) => trimmed.slice(0, 15).includes(k))) {
         matchedRole = femaleLead || narrator;
@@ -149,3 +177,4 @@ export function autoDetectParagraphRoles(
 
   return result;
 }
+

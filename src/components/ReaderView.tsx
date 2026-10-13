@@ -321,32 +321,56 @@ export function ReaderView({
   };
 
   const getRoleBorderColor = (roleId?: string) => {
-    switch (roleId) {
-      case 'male_lead':
+    const role = activeCast.find((r) => r.id === roleId);
+    const color = role?.color || 'amber';
+    switch (color) {
+      case 'blue':
         return 'border-l-4 border-blue-400 dark:border-blue-500 pl-3.5';
-      case 'female_lead':
+      case 'rose':
         return 'border-l-4 border-rose-400 dark:border-rose-500 pl-3.5';
-      case 'storyteller':
+      case 'indigo':
         return 'border-l-4 border-indigo-400 dark:border-indigo-500 pl-3.5';
-      case 'mature_male':
+      case 'purple':
         return 'border-l-4 border-purple-400 dark:border-purple-500 pl-3.5';
-      case 'narrator':
+      case 'emerald':
+        return 'border-l-4 border-emerald-400 dark:border-emerald-500 pl-3.5';
+      case 'teal':
+        return 'border-l-4 border-teal-400 dark:border-teal-500 pl-3.5';
+      case 'orange':
+        return 'border-l-4 border-orange-400 dark:border-orange-500 pl-3.5';
+      case 'cyan':
+        return 'border-l-4 border-cyan-400 dark:border-cyan-500 pl-3.5';
+      case 'fuchsia':
+        return 'border-l-4 border-fuchsia-400 dark:border-fuchsia-500 pl-3.5';
+      case 'amber':
       default:
         return 'border-l-4 border-amber-400/80 dark:border-amber-500/80 pl-3.5';
     }
   };
 
   const getRoleSelectClasses = (roleId?: string) => {
-    switch (roleId) {
-      case 'male_lead':
+    const role = activeCast.find((r) => r.id === roleId);
+    const color = role?.color || 'amber';
+    switch (color) {
+      case 'blue':
         return 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border-blue-300 dark:border-blue-800';
-      case 'female_lead':
+      case 'rose':
         return 'bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border-rose-300 dark:border-rose-800';
-      case 'storyteller':
+      case 'indigo':
         return 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border-indigo-300 dark:border-indigo-800';
-      case 'mature_male':
+      case 'purple':
         return 'bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border-purple-300 dark:border-purple-800';
-      case 'narrator':
+      case 'emerald':
+        return 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800';
+      case 'teal':
+        return 'bg-teal-50 dark:bg-teal-950/60 text-teal-700 dark:text-teal-300 border-teal-300 dark:border-teal-800';
+      case 'orange':
+        return 'bg-orange-50 dark:bg-orange-950/60 text-orange-700 dark:text-orange-300 border-orange-300 dark:border-orange-800';
+      case 'cyan':
+        return 'bg-cyan-50 dark:bg-cyan-950/60 text-cyan-700 dark:text-cyan-300 border-cyan-300 dark:border-cyan-800';
+      case 'fuchsia':
+        return 'bg-fuchsia-50 dark:bg-fuchsia-950/60 text-fuchsia-700 dark:text-fuchsia-300 border-fuchsia-300 dark:border-fuchsia-800';
+      case 'amber':
       default:
         return 'bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border-amber-300 dark:border-amber-800';
     }
