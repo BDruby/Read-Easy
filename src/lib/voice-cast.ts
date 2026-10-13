@@ -11,7 +11,8 @@ export interface VoiceRole {
 
 export interface ParagraphVoiceSetting {
   roleId?: string;
-  emotion?: 'normal' | 'excited' | 'sad' | 'scary' | 'cheerful';
+  emotion?: string;
+  customPrompt?: string;
   speed?: number;
 }
 
@@ -51,19 +52,37 @@ export const DEFAULT_VOICE_CAST: VoiceRole[] = [
   {
     id: 'mature_male',
     name: '长辈/反派',
-    voice: 'zh_male_sophie_uranus_bigtts',
+    voice: 'zh_male_dayi_uranus_bigtts',
     gender: 'Male',
     color: 'purple',
-    description: '魅力苏菲 2.0 · 沧桑沉稳的大叔音',
+    description: '大义 2.0 · 沧桑沉稳的大叔音、威严长辈与霸气反派',
   },
 ];
 
-export const EMOTION_PRESETS = [
-  { id: 'normal', name: '平稳叙述', speed: 1.0, icon: '📖', desc: '标准语速，沉稳自然' },
-  { id: 'excited', name: '慷慨激昂', speed: 1.15, icon: '🔥', desc: '语速加快，情绪充沛激昂' },
-  { id: 'sad', name: '低落哀伤', speed: 0.85, icon: '💔', desc: '语速放缓，声调低沉' },
-  { id: 'scary', name: '惊悚悬疑', speed: 0.9, icon: '👻', desc: '压低声线，氛围压抑紧绷' },
-  { id: 'cheerful', name: '轻快俏皮', speed: 1.1, icon: '🌸', desc: '欢快灵动，生活轻喜剧' },
+export interface EmotionPreset {
+  id: string;
+  name: string;
+  speed: number;
+  icon: string;
+  desc: string;
+  prompt?: string;
+  category: 'emotion' | 'dialect' | 'atmosphere';
+}
+
+export const EMOTION_PRESETS: EmotionPreset[] = [
+  { id: 'normal', name: '平稳叙述', speed: 1.0, icon: '📖', desc: '标准语速，沉稳自然', category: 'emotion' },
+  { id: 'fight', name: '吵架质问', speed: 1.15, icon: '💥', desc: '用很生气、吵架、激烈的语气对话', prompt: '用很生气、吵架、激烈的语气对话', category: 'emotion' },
+  { id: 'whisper', name: '暧昧耳语', speed: 0.9, icon: '🤫', desc: '用悄悄话的语气来试试撩撩我，非常温柔耳语', prompt: '用悄悄话的语气来试试撩撩我，非常温柔耳语', category: 'emotion' },
+  { id: 'spoiled', name: '撒娇卖萌', speed: 1.05, icon: '🎀', desc: '用撒娇卖萌、软糯甜美的语气说话', prompt: '用撒娇卖萌、软糯甜美的语气说话', category: 'emotion' },
+  { id: 'crying', name: '悲伤哭腔', speed: 0.85, icon: '😭', desc: '带着哽咽、悲伤快要哭出来的语气', prompt: '带着哽咽、悲伤快要哭出来的语气', category: 'emotion' },
+  { id: 'creepy', name: '阴森惊悚', speed: 0.9, icon: '👻', desc: '压低声音、阴森恐惧的语气说话', prompt: '用压低声音、阴森恐惧的语气说话', category: 'atmosphere' },
+  { id: 'majestic', name: '霸道威严', speed: 0.95, icon: '👑', desc: '威严霸道、不怒自威的帝王语气', prompt: '用威严霸道、不怒自威的帝王语气说话', category: 'atmosphere' },
+  { id: 'sarcastic', name: '冷嘲热讽', speed: 1.05, icon: '😏', desc: '充满嘲弄、轻蔑冷笑的语气', prompt: '用充满嘲弄、轻蔑冷笑的语气说话', category: 'emotion' },
+  { id: 'dialect_dongbei', name: '东北方言', speed: 1.05, icon: '🥟', desc: '用很纯正地道的东北话口音朗读', prompt: '用很纯正地道的东北话口音朗读', category: 'dialect' },
+  { id: 'dialect_sichuan', name: '四川方言', speed: 1.0, icon: '🌶️', desc: '用地道的四川话方言语气朗读', prompt: '用地道的四川话方言语气朗读', category: 'dialect' },
+  { id: 'dialect_beijing', name: '北京京腔', speed: 1.0, icon: '🏮', desc: '用一口地道北京腔、带儿化音的语气朗读', prompt: '用一口地道北京腔、带儿化音的语气朗读', category: 'dialect' },
+  { id: 'excited', name: '慷慨激昂', speed: 1.15, icon: '🔥', desc: '语速加快，情绪充沛激昂', prompt: '用慷慨激昂、斗志昂扬的热血语气说话', category: 'emotion' },
+  { id: 'cheerful', name: '轻快俏皮', speed: 1.1, icon: '🌸', desc: '欢快灵动，生活轻喜剧', prompt: '用欢快俏皮、轻松愉悦的语气说话', category: 'emotion' },
 ];
 
 /**
@@ -96,7 +115,7 @@ export function autoDetectParagraphRoles(
     const matureKeywords = ['老者', '长老', '师尊', '掌门', '家主', '宗主', '父亲', '老头', '敌人', '魔头'];
 
     let matchedRole = narrator;
-    let matchedEmotion: 'normal' | 'excited' | 'sad' | 'scary' | 'cheerful' = 'normal';
+    let matchedEmotion: string = 'normal';
 
     if (hasQuotes) {
       if (matureKeywords.some((k) => trimmed.slice(0, 15).includes(k))) {
@@ -110,11 +129,15 @@ export function autoDetectParagraphRoles(
         matchedRole = maleLead || narrator;
       }
 
-      // 情绪粗检
-      if (trimmed.includes('！') || trimmed.includes('怒') || trimmed.includes('大喝') || trimmed.includes('杀')) {
-        matchedEmotion = 'excited';
-      } else if (trimmed.includes('哭') || trimmed.includes('泣') || trimmed.includes('叹息') || trimmed.includes('痛')) {
-        matchedEmotion = 'sad';
+      // 智能情绪识别
+      if (trimmed.includes('吵') || trimmed.includes('滚') || trimmed.includes('闭嘴') || trimmed.includes('放肆') || trimmed.includes('怒') || trimmed.includes('大喝') || trimmed.includes('杀')) {
+        matchedEmotion = 'fight';
+      } else if (trimmed.includes('哭') || trimmed.includes('泣') || trimmed.includes('泪') || trimmed.includes('哽咽') || trimmed.includes('痛')) {
+        matchedEmotion = 'crying';
+      } else if (trimmed.includes('悄悄') || trimmed.includes('耳边') || trimmed.includes('低语') || trimmed.includes('温存')) {
+        matchedEmotion = 'whisper';
+      } else if (trimmed.includes('撒娇') || trimmed.includes('求求') || trimmed.includes('讨厌啦')) {
+        matchedEmotion = 'spoiled';
       }
     }
 

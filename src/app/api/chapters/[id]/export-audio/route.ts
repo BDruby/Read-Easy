@@ -89,12 +89,14 @@ export async function POST(
       const emotion = EMOTION_PRESETS.find((e) => e.id === emotionId) || EMOTION_PRESETS[0];
 
       const speed = pSetting.speed || emotion.speed || 1.0;
+      const contextText = pSetting.customPrompt || emotion.prompt;
 
       // Synthesize audio chunk
       const result = await synthesizeSpeech({
         text: cleanText,
         voice: role.voice,
         speed: speed,
+        contextText: contextText,
       });
 
       const audioBuf = result.audioBuffer;

@@ -14,6 +14,7 @@ export interface TTSRequest {
   voice?: string;
   speed?: number; // 0.5 - 2.0
   strict?: boolean;
+  contextText?: string;
 }
 
 export interface TTSResult {
@@ -31,8 +32,8 @@ const SILENT_MP3 = Buffer.from(
   'base64'
 );
 
-function getCacheKey(voice: string, speed: number, text: string) {
-  const hash = crypto.createHash('md5').update(text).digest('hex');
+function getCacheKey(voice: string, speed: number, text: string, contextText?: string) {
+  const hash = crypto.createHash('md5').update(`${text}::${contextText || ''}`).digest('hex');
   return `tts::${voice}::${speed.toFixed(2)}::${hash}`;
 }
 
@@ -84,7 +85,7 @@ export async function synthesizeSpeech(request: TTSRequest): Promise<TTSResult> 
   const voice = request.voice || settings['volcano_voice_type'] || settings['edge_voice'] || 'zh_female_vv_uranus_bigtts';
 
   // 2. 内存 LRU 极速缓存检测 (根据文本 MD5 哈希秒级命中，0ms，0 Token)
-  const cacheKey = getCacheKey(voice, speed, cleanText);
+  const cacheKey = getCacheKey(voice, speed, cleanText, request.contextText);
   const cached = serverTtsCache.get(cacheKey);
   if (cached) {
     return {
@@ -105,6 +106,7 @@ export async function synthesizeSpeech(request: TTSRequest): Promise<TTSResult> 
       const buf = await synthesizeDoubaoTTS(cleanText, volcanoAppId, volcanoToken, {
         voice: doubaoVoice,
         speed: speed,
+        contextText: request.contextText,
       });
 
       const result: TTSResult = {

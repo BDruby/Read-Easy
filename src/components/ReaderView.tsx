@@ -116,6 +116,8 @@ export function ReaderView({
   const [isVoiceStudioActive, setIsVoiceStudioActive] = useState<boolean>(projectType === 'audiobook');
   const [downloadingParaIdx, setDownloadingParaIdx] = useState<number | null>(null);
   const [previewingParaIdx, setPreviewingParaIdx] = useState<number | null>(null);
+  const [promptModalIdx, setPromptModalIdx] = useState<number | null>(null);
+  const [customPromptInput, setCustomPromptInput] = useState<string>('');
 
   useEffect(() => {
     if (projectType === 'audiobook') {
@@ -207,6 +209,38 @@ export function ReaderView({
     }
   };
 
+  const handleOpenPromptModal = (idx: number) => {
+    const existing = activeVoiceConfig[idx]?.customPrompt || '';
+    setCustomPromptInput(existing);
+    setPromptModalIdx(idx);
+  };
+
+  const handleSaveCustomPrompt = () => {
+    if (promptModalIdx !== null && onUpdateVoiceConfig) {
+      const existing = activeVoiceConfig[promptModalIdx] || {};
+      onUpdateVoiceConfig({
+        ...activeVoiceConfig,
+        [promptModalIdx]: {
+          ...existing,
+          customPrompt: customPromptInput.trim() ? customPromptInput.trim() : undefined,
+        },
+      });
+      setPromptModalIdx(null);
+    }
+  };
+
+  const handleClearCustomPrompt = (idx: number) => {
+    if (onUpdateVoiceConfig) {
+      const existing = activeVoiceConfig[idx] || {};
+      const updated = { ...existing };
+      delete updated.customPrompt;
+      onUpdateVoiceConfig({
+        ...activeVoiceConfig,
+        [idx]: updated,
+      });
+    }
+  };
+
   const handlePreviewSingleParagraph = async (idx: number, text: string) => {
     if (previewingParaIdx !== null) return;
     setPreviewingParaIdx(idx);
@@ -217,6 +251,7 @@ export function ReaderView({
       const emotionId = pSetting.emotion || 'normal';
       const emotion = EMOTION_PRESETS.find((e) => e.id === emotionId) || EMOTION_PRESETS[0];
       const speed = pSetting.speed || emotion.speed || 1.0;
+      const contextText = pSetting.customPrompt || emotion.prompt;
 
       const res = await fetch('/api/tts', {
         method: 'POST',
@@ -225,6 +260,7 @@ export function ReaderView({
           text,
           voice: role.voice,
           speed: speed,
+          contextText: contextText,
         }),
       });
 
@@ -252,6 +288,7 @@ export function ReaderView({
       const emotionId = pSetting.emotion || 'normal';
       const emotion = EMOTION_PRESETS.find((e) => e.id === emotionId) || EMOTION_PRESETS[0];
       const speed = pSetting.speed || emotion.speed || 1.0;
+      const contextText = pSetting.customPrompt || emotion.prompt;
 
       const res = await fetch('/api/tts', {
         method: 'POST',
@@ -260,6 +297,7 @@ export function ReaderView({
           text,
           voice: role.voice,
           speed: speed,
+          contextText: contextText,
         }),
       });
 
@@ -1639,10 +1677,47 @@ export function ReaderView({
                           >
                             {EMOTION_PRESETS.map((em) => (
                               <option key={em.id} value={em.id}>
-                                {em.icon} {em.name} ({em.speed}x)
+                                {em.icon} {em.name}
                               </option>
                             ))}
                           </select>
+
+                          {/* Custom Natural Language Directive Trigger */}
+                          {activeVoiceConfig[idx]?.customPrompt ? (
+                            <span
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleOpenPromptModal(idx);
+                              }}
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/30 text-[11px] font-medium cursor-pointer hover:bg-amber-500/30 transition"
+                              title="点击修改自定义语气/方言指令"
+                            >
+                              <span className="max-w-[130px] truncate">✨ {activeVoiceConfig[idx]?.customPrompt}</span>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleClearCustomPrompt(idx);
+                                }}
+                                className="hover:text-red-500 ml-0.5"
+                                title="清除自定义指令，恢复预设"
+                              >
+                                ✕
+                              </button>
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleOpenPromptModal(idx);
+                              }}
+                              className="px-2 py-0.5 rounded-lg bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 hover:border-purple-400 text-stone-600 dark:text-stone-300 hover:text-purple-600 dark:hover:text-purple-400 transition text-[11px] flex items-center gap-1"
+                              title="自定义豆包大模型自然语言语气/方言指令（如吵架、耳语、东北话、四川话等）"
+                            >
+                              <span>✍️ 指令</span>
+                            </button>
+                          )}
                         </div>
 
                         {/* Preview & Download Buttons */}
@@ -1883,6 +1958,98 @@ export function ReaderView({
         onClose={() => setSuggestionParaIdx(null)}
         onSuccess={() => loadComments()}
       />
+
+      {/* Doubao TTS 2.0 Natural Language Directive Prompt Modal */}
+      {promptModalIdx !== null && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in"
+          onClick={() => setPromptModalIdx(null)}
+        >
+          <div
+            className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-2xl max-w-lg w-full p-5 shadow-2xl space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between pb-3 border-b border-stone-100 dark:border-stone-800">
+              <h4 className="font-bold text-sm text-stone-900 dark:text-stone-100 flex items-center gap-2">
+                <span>✨ 豆包 TTS 2.0 语音自然语言指令控制</span>
+              </h4>
+              <button
+                type="button"
+                onClick={() => setPromptModalIdx(null)}
+                className="text-stone-400 hover:text-stone-600 dark:hover:text-stone-200"
+              >
+                ✕
+              </button>
+            </div>
+
+            <p className="text-xs text-stone-500 dark:text-stone-400 leading-relaxed">
+              输入任意自然语言提示词（Prompt），豆包大模型 2.0 将按指令控制情绪爆发力、气声呼吸或方言口音：
+            </p>
+
+            {/* Quick Directive Chips */}
+            <div className="space-y-1.5">
+              <span className="text-[11px] font-semibold text-stone-400">🔥 常用语气与方言模板（点击直接填入）：</span>
+              <div className="flex flex-wrap gap-1.5 text-xs max-h-36 overflow-y-auto">
+                {[
+                  '用很生气、吵架、激烈的语气对话',
+                  '用悄悄话的语气来试试撩撩我，非常温柔耳语',
+                  '用撒娇卖萌、软糯甜美的语气说话',
+                  '带着快要哭出来的哽咽哭腔',
+                  '用很纯正地道的东北话口音朗读',
+                  '用地道的四川话方言语气朗读',
+                  '用一口地道北京腔、带儿化音的语气朗读',
+                  '用压低声音、阴森恐惧的语气说话',
+                  '用威严霸道、不怒自威的帝王语气说话',
+                  '用充满嘲弄、轻蔑冷笑的语气说话',
+                ].map((promptChip) => (
+                  <button
+                    key={promptChip}
+                    type="button"
+                    onClick={() => setCustomPromptInput(promptChip)}
+                    className="px-2.5 py-1 rounded-lg bg-stone-100 dark:bg-stone-800 hover:bg-purple-100 dark:hover:bg-purple-950/60 text-stone-700 dark:text-stone-300 hover:text-purple-700 dark:hover:text-purple-300 text-[11.5px] transition border border-transparent hover:border-purple-300 dark:hover:border-purple-700 text-left"
+                  >
+                    {promptChip}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Textarea */}
+            <div>
+              <label className="block text-xs font-semibold text-stone-700 dark:text-stone-300 mb-1.5">
+                当前段落指令：
+              </label>
+              <textarea
+                rows={3}
+                value={customPromptInput}
+                onChange={(e) => setCustomPromptInput(e.target.value)}
+                placeholder="例如：用很生气、吵架的语气对话；或者用温柔耳语..."
+                className="w-full text-xs p-3 rounded-xl bg-stone-50 dark:bg-stone-950 border border-stone-200 dark:border-stone-800 text-stone-900 dark:text-stone-100 focus:outline-none focus:ring-1 focus:ring-purple-500"
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setCustomPromptInput('');
+                  handleSaveCustomPrompt();
+                }}
+                className="px-3 py-1.5 rounded-xl text-xs text-stone-500 hover:bg-stone-100 dark:hover:bg-stone-800 transition"
+              >
+                清空指令
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveCustomPrompt}
+                className="px-4 py-1.5 rounded-xl text-xs font-semibold bg-purple-600 hover:bg-purple-500 text-white shadow-xs transition"
+              >
+                应用指令
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

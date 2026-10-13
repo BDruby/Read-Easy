@@ -14,9 +14,11 @@ import {
   Loader2,
   Play,
   Check,
+  Search,
 } from 'lucide-react';
 import { VoiceRole, DEFAULT_VOICE_CAST, EMOTION_PRESETS, autoDetectParagraphRoles, ParagraphVoiceSetting } from '@/lib/voice-cast';
 import { DOUBAO_VOICES } from '@/lib/tts/doubao-tts';
+import { VoiceSelectorModal } from './VoiceSelectorModal';
 
 interface VoiceStudioBarProps {
   chapterId: string;
@@ -44,6 +46,7 @@ export function VoiceStudioBar({
   const [isExportingMp3, setIsExportingMp3] = useState(false);
   const [isExportingSrt, setIsExportingSrt] = useState(false);
   const [playingVoiceId, setPlayingVoiceId] = useState<string | null>(null);
+  const [modalRole, setModalRole] = useState<VoiceRole | null>(null);
 
   // Calculate statistics
   const totalParas = paragraphs.length;
@@ -292,21 +295,34 @@ export function VoiceStudioBar({
                     <span className="font-bold text-xs text-stone-100">{role.name}</span>
                   </div>
 
-                  {/* Play Voice Sample Button */}
-                  <button
-                    type="button"
-                    onClick={() => handleTestPlayVoice(role.voice)}
-                    disabled={playingVoiceId === role.voice}
-                    className="p-1 rounded-lg text-purple-300 hover:text-white hover:bg-purple-500/30 transition text-[11px] flex items-center gap-1"
-                    title="试听当前声优原声"
-                  >
-                    {playingVoiceId === role.voice ? (
-                      <Loader2 className="w-3 h-3 animate-spin text-purple-300" />
-                    ) : (
-                      <Volume2 className="w-3 h-3" />
-                    )}
-                    <span>试听</span>
-                  </button>
+                  <div className="flex items-center gap-1.5">
+                    {/* Search Library Button */}
+                    <button
+                      type="button"
+                      onClick={() => setModalRole(role)}
+                      className="p-1 px-2 rounded-lg text-purple-300 hover:text-white hover:bg-purple-500/30 transition text-[11px] flex items-center gap-1 border border-purple-500/30"
+                      title="打开官方音色库进行分类筛选与搜索"
+                    >
+                      <Search className="w-3 h-3 text-purple-300" />
+                      <span>库中搜索</span>
+                    </button>
+
+                    {/* Play Voice Sample Button */}
+                    <button
+                      type="button"
+                      onClick={() => handleTestPlayVoice(role.voice)}
+                      disabled={playingVoiceId === role.voice}
+                      className="p-1 px-2 rounded-lg text-purple-300 hover:text-white hover:bg-purple-500/30 transition text-[11px] flex items-center gap-1 border border-purple-500/20"
+                      title="试听当前声优原声"
+                    >
+                      {playingVoiceId === role.voice ? (
+                        <Loader2 className="w-3 h-3 animate-spin text-purple-300" />
+                      ) : (
+                        <Volume2 className="w-3 h-3" />
+                      )}
+                      <span>试听</span>
+                    </button>
+                  </div>
                 </div>
 
                 {/* Voice Selector Dropdown */}
@@ -331,6 +347,19 @@ export function VoiceStudioBar({
           })}
         </div>
       )}
+
+      {/* Voice Selector & Search Modal */}
+      <VoiceSelectorModal
+        isOpen={!!modalRole}
+        onClose={() => setModalRole(null)}
+        currentVoiceId={modalRole?.voice}
+        roleName={modalRole?.name}
+        onSelectVoice={(voiceId) => {
+          if (modalRole) {
+            handleRoleVoiceChange(modalRole.id, voiceId);
+          }
+        }}
+      />
     </div>
   );
 }

@@ -6,7 +6,7 @@ export const dynamic = 'force-dynamic';
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { text, provider, voice, speed } = body;
+    const { text, provider, voice, speed, contextText } = body;
 
     if (!text || typeof text !== 'string' || text.trim().length === 0) {
       return NextResponse.json({ success: false, message: '朗读文本不能为空' }, { status: 400 });
@@ -20,6 +20,7 @@ export async function POST(req: NextRequest) {
       provider,
       voice,
       speed: speed ? parseFloat(speed) : 1.0,
+      contextText: typeof contextText === 'string' ? contextText.trim() : undefined,
     });
 
     return new NextResponse(new Uint8Array(result.audioBuffer), {
