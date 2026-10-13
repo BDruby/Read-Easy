@@ -62,6 +62,7 @@ export interface AudioPlayerProps {
   playTrigger?: number;
   voiceCast?: VoiceRole[];
   voiceConfig?: Record<number, ParagraphVoiceSetting>;
+  isVisible?: boolean;
 }
 
 export function AudioPlayer({
@@ -77,6 +78,7 @@ export function AudioPlayer({
   playTrigger,
   voiceCast,
   voiceConfig,
+  isVisible = true,
 }: AudioPlayerProps) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -634,8 +636,21 @@ export function AudioPlayer({
     }
   };
 
+  // Automatically pause playback and close popups when player is hidden
+  useEffect(() => {
+    if (!isVisible) {
+      if (isPlayingRef.current) {
+        handleStop();
+      }
+      setShowVoiceMenu(false);
+      setShowSpeedMenu(false);
+      setShowTimerMenu(false);
+    }
+  }, [isVisible]);
+
   // Keyboard Shortcuts (Space for Play/Pause, Left/Right for Paragraph Skip)
   useEffect(() => {
+    if (!isVisible) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       const activeTag = document.activeElement?.tagName.toLowerCase();
       if (activeTag === 'input' || activeTag === 'textarea' || (document.activeElement as HTMLElement)?.isContentEditable) {
@@ -656,7 +671,7 @@ export function AudioPlayer({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isPlaying]);
+  }, [isPlaying, isVisible]);
 
   // Progress Bar Seek / Drag Handler
   const handleSeek = (e: React.MouseEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>) => {
@@ -752,7 +767,7 @@ export function AudioPlayer({
   return (
     <>
       {/* 1. Minimized Floating Audio Capsule Widget */}
-      {isMinimized && (
+      {isMinimized && isVisible && (
         <div className="fixed bottom-5 right-3 sm:right-6 z-50 animate-in fade-in slide-in-from-bottom-4 duration-300">
           <div className="flex items-center gap-2 p-1.5 pl-3 bg-white/95 dark:bg-stone-900/95 backdrop-blur-xl border border-amber-500/40 dark:border-amber-400/40 rounded-full shadow-2xl text-stone-800 dark:text-stone-100 hover:border-amber-500 transition group">
             {/* Click info to expand */}
@@ -822,8 +837,8 @@ export function AudioPlayer({
 
       {/* 2. Full Audio Player Panel */}
       <div
-        className={`fixed bottom-0 left-0 right-0 z-50 transition-all duration-300 transform ${
-          isMinimized ? 'translate-y-full opacity-0 pointer-events-none' : 'translate-y-0 opacity-100'
+        className={`fixed bottom-0 left-0 right-0 z-50 transition-all duration-300 ease-in-out transform ${
+          !isVisible || isMinimized ? 'translate-y-full opacity-0 pointer-events-none' : 'translate-y-0 opacity-100'
         }`}
       >
         <div className="max-w-4xl mx-auto px-3 pb-3">

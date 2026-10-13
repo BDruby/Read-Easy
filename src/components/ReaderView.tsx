@@ -87,6 +87,8 @@ export interface ReaderViewProps {
   voiceConfig?: Record<number, ParagraphVoiceSetting>;
   onUpdateCast?: (cast: VoiceRole[]) => void;
   onUpdateVoiceConfig?: (config: Record<number, ParagraphVoiceSetting>) => void;
+  isVoiceStudioActive?: boolean;
+  onToggleVoiceStudio?: (active: boolean) => void;
 }
 
 export function ReaderView({
@@ -111,9 +113,22 @@ export function ReaderView({
   voiceConfig,
   onUpdateCast,
   onUpdateVoiceConfig,
+  isVoiceStudioActive: propIsVoiceStudioActive,
+  onToggleVoiceStudio,
 }: ReaderViewProps) {
-  // Voice Studio Mode State
-  const [isVoiceStudioActive, setIsVoiceStudioActive] = useState<boolean>(projectType === 'audiobook');
+  // Voice Studio Mode State (Controlled or Uncontrolled fallback)
+  const [internalVoiceStudioActive, setInternalVoiceStudioActive] = useState<boolean>(projectType === 'audiobook');
+  const isVoiceStudioActive = propIsVoiceStudioActive !== undefined ? propIsVoiceStudioActive : internalVoiceStudioActive;
+
+  const toggleVoiceStudio = () => {
+    const nextVal = !isVoiceStudioActive;
+    if (onToggleVoiceStudio) {
+      onToggleVoiceStudio(nextVal);
+    } else {
+      setInternalVoiceStudioActive(nextVal);
+    }
+  };
+
   const [downloadingParaIdx, setDownloadingParaIdx] = useState<number | null>(null);
   const [previewingParaIdx, setPreviewingParaIdx] = useState<number | null>(null);
   const [promptModalIdx, setPromptModalIdx] = useState<number | null>(null);
@@ -121,9 +136,13 @@ export function ReaderView({
 
   useEffect(() => {
     if (projectType === 'audiobook') {
-      setIsVoiceStudioActive(true);
+      if (onToggleVoiceStudio) {
+        onToggleVoiceStudio(true);
+      } else {
+        setInternalVoiceStudioActive(true);
+      }
     }
-  }, [projectType]);
+  }, [projectType, onToggleVoiceStudio]);
 
   const activeCast = voiceCast && voiceCast.length > 0 ? voiceCast : DEFAULT_VOICE_CAST;
   const activeVoiceConfig = voiceConfig || {};
@@ -825,7 +844,7 @@ export function ReaderView({
   }[maxWidth];
 
   return (
-    <div className={`min-h-screen ${themeClassMap[theme]} transition-colors duration-300 relative pb-36`}>
+    <div className={`min-h-screen ${themeClassMap[theme]} transition-colors duration-300 relative ${isVoiceStudioActive ? 'pb-16' : 'pb-36'}`}>
       {/* Sticky Top Floating Action Bar & Typography Settings Dock */}
       <div className="sticky top-14 z-30">
         <header className="backdrop-blur-md bg-white/80 dark:bg-stone-900/80 border-b border-stone-200/60 dark:border-stone-800/60 px-4 py-2.5 shadow-xs transition-colors">
@@ -946,13 +965,13 @@ export function ReaderView({
               {/* Voice Studio Toggle */}
               <button
                 type="button"
-                onClick={() => setIsVoiceStudioActive(!isVoiceStudioActive)}
+                onClick={toggleVoiceStudio}
                 className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition ${
                   isVoiceStudioActive
                     ? 'bg-purple-600 hover:bg-purple-700 text-white shadow-xs'
                     : 'bg-purple-50 dark:bg-purple-950/60 hover:bg-purple-100 dark:hover:bg-purple-900/60 text-purple-700 dark:text-purple-300 border border-purple-200/50 dark:border-purple-800/50'
                 }`}
-                title="切换 AI 有声工坊模式 (声优分配、单段MP3与全篇导出)"
+                title={isVoiceStudioActive ? "已开启 AI 有声工坊（底部悬浮条已收起，专注于分段角色配音）" : "切换至 AI 有声工坊模式 (声优分配、单段MP3与全篇导出)"}
               >
                 <Mic className="w-3.5 h-3.5" />
                 <span className="hidden sm:inline">有声工坊</span>

@@ -69,6 +69,7 @@ export default function ProjectReviewPage() {
 
   const [activeCast, setActiveCast] = useState<VoiceRole[]>(DEFAULT_VOICE_CAST);
   const [chapterVoiceConfig, setChapterVoiceConfig] = useState<Record<number, ParagraphVoiceSetting>>({});
+  const [isVoiceStudioActive, setIsVoiceStudioActive] = useState<boolean>(false);
 
   const [currentSpeakingIdx, setCurrentSpeakingIdx] = useState<number>(0);
   const [playTrigger, setPlayTrigger] = useState<number>(0);
@@ -95,6 +96,10 @@ export default function ProjectReviewPage() {
           type: data.data.type,
           voiceCast: data.data.voiceCast,
         });
+
+        if (data.data.type === 'audiobook') {
+          setIsVoiceStudioActive(true);
+        }
 
         if (data.data.voiceCast) {
           try {
@@ -671,6 +676,8 @@ export default function ProjectReviewPage() {
               voiceConfig={chapterVoiceConfig}
               onUpdateCast={handleUpdateCast}
               onUpdateVoiceConfig={handleUpdateVoiceConfig}
+              isVoiceStudioActive={isVoiceStudioActive}
+              onToggleVoiceStudio={(active) => setIsVoiceStudioActive(active)}
             />
           )}
         </div>
@@ -711,6 +718,7 @@ export default function ProjectReviewPage() {
           playTrigger={playTrigger}
           voiceCast={activeCast}
           voiceConfig={chapterVoiceConfig}
+          isVisible={!isVoiceStudioActive}
         />
       )}
     </div>
